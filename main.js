@@ -13,7 +13,7 @@ let tempLayer = null;
 let currentTool = null;
 let chartInstance = null;
 let cursorMarker = null;
-let currentProfileExportData = []; // Stockage pour le CSV
+let currentProfileExportData = [];
 
 // ==========================================
 // 2. IMPORTATION MNT
@@ -22,18 +22,24 @@ document.getElementById('file-input').onchange = async (e) => {
     for (const file of e.target.files) {
         if (!file.name.match(/\.(tif|tiff)$/i)) continue;
         
-        const buffer = await file.arrayBuffer();
-        const tiff = await GeoTIFF.fromArrayBuffer(buffer);
-        const image = await tiff.getImage();
-        const bbox = image.getBoundingBox();
-        const raster = await image.readRasters();
-        
-        const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
-        const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
-        const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { color: "#00d1b2", weight: 2, fillOpacity: 0.15 }).addTo(map);
+        try {
+            const buffer = await file.arrayBuffer();
+            const tiff = await GeoTIFF.fromArrayBuffer(buffer);
+            const image = await tiff.getImage();
+            const bbox = image.getBoundingBox();
+            const raster = await image.readRasters();
+            
+            const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
+            const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
+            const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { color: "#00d1b2", weight: 2, fillOpacity: 0.15 }).addTo(map);
 
-        mntStore.push({ id: Date.now()+Math.random(), name: file.name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true });
-        map.fitBounds(visual.getBounds());
+            const id = Date.now() + Math.random();
+            mntStore.push({ id, name: file.name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true });
+            
+            map.fitBounds(visual.getBounds());
+        } catch(err) {
+            console.error("Erreur lecture:", err);
+        }
     }
     updateMntUI();
 };
@@ -68,38 +74,30 @@ window.deleteMNT = (id) => {
     updateMntUI();
 };
 
-// --- CALCUL Z : INTERPOLATION BILINÉAIRE POUR PRÉCISION MAXIMALE ---
 function getZ(l93) {
     for (let m of mntStore) {
         if (!m.visible) continue;
         if (l93[0] >= m.bbox[0] && l93[0] <= m.bbox[2] && l93[1] >= m.bbox[1] && l93[1] <= m.bbox[3]) {
-            // Position flottante exacte dans le fichier
             const px = ((l93[0] - m.bbox[0]) / (m.bbox[2] - m.bbox[0])) * m.width;
             const py = ((m.bbox[3] - l93[1]) / (m.bbox[3] - m.bbox[1])) * m.height;
             
-            // Les 4 pixels autour de notre point pour lisser la donnée
             const x1 = Math.floor(px), x2 = Math.min(x1 + 1, m.width - 1);
             const y1 = Math.floor(py), y2 = Math.min(y1 + 1, m.height - 1);
 
-            const dx = px - x1;
-            const dy = py - y1;
-
+            const dx = px - x1, dy = py - y1;
             const q11 = m.data[y1 * m.width + x1] || 0;
             const q21 = m.data[y1 * m.width + x2] || 0;
             const q12 = m.data[y2 * m.width + x1] || 0;
             const q22 = m.data[y2 * m.width + x2] || 0;
 
-            if (q11 < -500) return null; // Filtre NoData de l'IGN
-
-            // Formule mathématique d'interpolation bilinéaire
-            const val = (1-dx)*(1-dy)*q11 + dx*(1-dy)*q21 + (1-dx)*dy*q12 + dx*dy*q22;
-            return val;
+            if (q11 < -500) return null;
+            return (1-dx)*(1-dy)*q11 + dx*(1-dy)*q21 + (1-dx)*dy*q12 + dx*dy*q22;
         }
     } return null;
 }
 
 // ==========================================
-// 3. OUTILS DE TRACÉ SÉCURISÉS (BOUTON MANUEL)
+// 3. OUTILS DE TRACÉ SÉCURISÉS
 // ==========================================
 window.startTool = (tool) => {
     currentTool = tool;
@@ -108,64 +106,76 @@ window.startTool = (tool) => {
     
     document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
     document.getElementById('btn-' + tool).classList.add('active');
-    
-    // Fait apparaître le bouton TERMINER LE TRACÉ
-    document.getElementById('btn-finish').style.display = 'block';
+
+    // LA CORRECTION EST ICI : On affiche le bouton rouge
+    if (tool === 'line' || tool === 'area') {
+        document.getElementById('btn-finish').style.display = 'block';
+    } else {
+        document.getElementById('btn-finish').style.display = 'none';
+    }
 };
 
 map.on('click', (e) => {
     if (!currentTool) return;
     
     currentPoints.push(e.latlng);
-    
     if (tempLayer) map.removeLayer(tempLayer);
     
     const color = currentTool === 'area' ? '#e67e22' : (currentTool === 'profile' ? '#f1c40f' : '#3498db');
+    
     if (currentTool === 'area') {
         tempLayer = L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map);
     } else {
         tempLayer = L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
     }
 
-    // Si Profil, on s'arrête strictement à 2 clics
     if (currentTool === 'profile' && currentPoints.length === 2) {
-        finalizeDraw();
+        window.finalizeDraw();
     }
 });
 
+// Le bouton appelle cette fonction
 window.finalizeDraw = () => {
-    if (!currentTool || currentPoints.length < 2) return;
+    if (!currentTool || currentPoints.length < 2) {
+        alert("Veuillez placer au moins 2 points sur la carte.");
+        return;
+    }
     
-    const type = currentTool;
-    const color = type === 'area' ? '#e67e22' : (type === 'profile' ? '#f1c40f' : '#3498db');
-    
-    const layer = type === 'area' 
-        ? L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map) 
-        : L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
+    try {
+        const type = currentTool;
+        const color = type === 'area' ? '#e67e22' : (type === 'profile' ? '#f1c40f' : '#3498db');
+        
+        const layer = type === 'area' 
+            ? L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map) 
+            : L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
 
-    if (tempLayer) map.removeLayer(tempLayer);
-    tempLayer = null;
+        if (tempLayer) map.removeLayer(tempLayer);
+        tempLayer = null;
 
-    const drawObj = { 
-        id: Date.now(), type, layer, 
-        ptsGPS: [...currentPoints], 
-        visible: true, color, 
-        editGroup: L.layerGroup().addTo(map),
-        statsHtml: ""
-    };
-    
-    drawStore.push(drawObj);
-    recalculateStats(drawObj);
-    makeEditable(drawObj);
-    
-    if (type === 'profile') generateProfile(drawObj);
-    
-    // Réinitialisation de l'outil
-    currentTool = null;
-    currentPoints = [];
-    document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
-    document.getElementById('btn-finish').style.display = 'none'; // Cache le bouton
-}
+        const drawObj = { 
+            id: Date.now(), type, layer, 
+            ptsGPS: [...currentPoints], 
+            visible: true, color, 
+            editGroup: L.layerGroup().addTo(map) 
+        };
+        
+        drawStore.push(drawObj);
+        recalculateStats(drawObj);
+        makeEditable(drawObj);
+        
+        if (type === 'profile') generateProfile(drawObj);
+        
+        currentTool = null;
+        currentPoints = [];
+        document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+        
+        // LA CORRECTION EST ICI : On cache le bouton rouge une fois fini
+        document.getElementById('btn-finish').style.display = 'none';
+        
+    } catch (e) {
+        console.error("Erreur de finalisation :", e);
+    }
+};
 
 // ==========================================
 // 4. CALCULS ET ÉDITION (LIVE)
@@ -203,7 +213,7 @@ function updateDrawUI() {
     const list = document.getElementById('measure-list');
     list.innerHTML = '';
     drawStore.forEach(d => {
-        const title = d.type === 'profile' ? 'PROFIL' : (d.type === 'line' ? 'LIGNE / PENTE' : 'SURFACE');
+        const title = d.type === 'profile' ? 'PROFIL' : (d.type === 'line' ? 'LONGUEUR & PENTE' : 'SURFACE');
         list.innerHTML += `
         <div class="card" style="border-left-color: ${d.color}">
             <div class="card-header">
@@ -248,7 +258,6 @@ window.toggleDraw = (id) => {
 window.changeColor = (id, color) => {
     const d = drawStore.find(x => x.id === id);
     d.color = color; d.layer.setStyle({ color: color });
-    updateDrawUI();
 };
 
 window.deleteDraw = (id) => {
@@ -274,7 +283,7 @@ function generateProfile(d) {
     const l93Pts = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
     let chartData = [];
     let geoRef = [];
-    currentProfileExportData = []; // Reset des données d'export
+    currentProfileExportData = []; 
     const pointsCount = 100;
 
     for (let i = 0; i <= pointsCount; i++) {
@@ -284,12 +293,11 @@ function generateProfile(d) {
         const z = getZ([x, y]) || 0;
         
         const currentDist = t * d.totalDist;
-        chartData.push({ x: parseFloat(currentDist.toFixed(2)), y: parseFloat(z.toFixed(3)) }); // Précision millimétrique sur le graph
+        chartData.push({ x: parseFloat(currentDist.toFixed(2)), y: parseFloat(z.toFixed(3)) }); 
         
         const gps = proj4("EPSG:2154", "EPSG:4326", [x, y]);
         geoRef.push(gps);
         
-        // Stockage pour l'export CSV
         currentProfileExportData.push({ dist: currentDist.toFixed(2), z: z.toFixed(3), lat: gps[1].toFixed(6), lng: gps[0].toFixed(6), x: x.toFixed(2), y: y.toFixed(2) });
     }
 
@@ -323,7 +331,6 @@ function generateProfile(d) {
     };
 }
 
-// Fonction d'Export Image
 window.exportChartPNG = () => {
     const a = document.createElement('a');
     a.href = document.getElementById('profileChart').toDataURL('image/png');
@@ -331,7 +338,6 @@ window.exportChartPNG = () => {
     a.click();
 };
 
-// Fonction d'Export CSV Complet
 window.exportChartCSV = () => {
     let csv = "Distance(m),Altitude(m),Latitude,Longitude,X(L93),Y(L93)\n";
     currentProfileExportData.forEach(row => {
@@ -353,5 +359,5 @@ map.on('mousemove', (e) => {
     const z = getZ(l93);
     document.getElementById('cur-x').textContent = l93[0].toFixed(2);
     document.getElementById('cur-y').textContent = l93[1].toFixed(2);
-    document.getElementById('cur-z').textContent = z !== null ? z.toFixed(3) : "---"; // 3 chiffres après la virgule !
+    document.getElementById('cur-z').textContent = z !== null ? z.toFixed(3) : "---";
 });

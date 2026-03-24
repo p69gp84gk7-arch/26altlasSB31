@@ -78,13 +78,13 @@ function getZ(l93) {
             const px = Math.floor(((l93[0] - m.bbox[0]) / (m.bbox[2] - m.bbox[0])) * m.width);
             const py = Math.floor(((m.bbox[3] - l93[1]) / (m.bbox[3] - m.bbox[1])) * m.height);
             const val = m.data[py * m.width + px];
-            if (val > -1000) return val;
+            if (val !== undefined && val > -1000) return val;
         }
     } return null;
 }
 
 // ==========================================
-// 3. OUTILS DE TRACÉ
+// 3. OUTILS DE TRACÉ (FIX ROBUSTE)
 // ==========================================
 window.startTool = (tool) => {
     currentTool = tool;
@@ -95,9 +95,21 @@ window.startTool = (tool) => {
     document.getElementById('btn-' + tool).classList.add('active');
 };
 
+let lastClickTime = 0; // Sécurité contre les bugs de double-clic
+
 map.on('click', (e) => {
     if (!currentTool) return;
     
+    const now = Date.now();
+    // Détection "maison" du double clic (moins de 300 millisecondes entre 2 clics)
+    if (now - lastClickTime < 300 && currentTool !== 'profile') {
+        if (currentPoints.length > 1) {
+            finalizeDraw();
+        }
+        return;
+    }
+    lastClickTime = now;
+
     currentPoints.push(e.latlng);
     if (tempLayer) map.removeLayer(tempLayer);
     
@@ -109,15 +121,9 @@ map.on('click', (e) => {
         tempLayer = L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
     }
 
+    // Le profil s'arrête strictement à 2 points
     if (currentTool === 'profile' && currentPoints.length === 2) {
-        setTimeout(finalizeDraw, 50); // Évite les conflits de clics
-    }
-});
-
-map.on('dblclick', () => {
-    if (currentTool && currentTool !== 'profile') {
-        currentPoints.pop(); // Retire le clic du double-clic
-        if (currentPoints.length > 1) finalizeDraw();
+        setTimeout(finalizeDraw, 50);
     }
 });
 
@@ -150,12 +156,12 @@ function finalizeDraw() {
         currentPoints = [];
         document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
     } catch (e) {
-        console.error("Erreur de tracé:", e);
+        console.error("Erreur de finalisation du tracé :", e);
     }
 }
 
 // ==========================================
-// 4. CALCULS ET UI DE DROITE
+// 4. CALCULS ET AFFICHAGE DANS LE BANDEAU
 // ==========================================
 function recalculateStats(d) {
     const l93 = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
@@ -187,7 +193,7 @@ function updateDrawUI() {
     const list = document.getElementById('measure-list');
     list.innerHTML = '';
     drawStore.forEach(d => {
-        const title = d.type === 'profile' ? 'PROFIL' : (d.type === 'line' ? 'LIGNE' : 'SURFACE');
+        const title = d.type === 'profile' ? 'PROFIL' : (d.type === 'line' ? 'LONGUEUR & PENTE' : 'SURFACE');
         list.innerHTML += `
         <div class="card" style="border-left-color: ${d.color}">
             <div class="card-header">
@@ -198,20 +204,20 @@ function updateDrawUI() {
                 </div>
                 <button class="btn-del" onclick="deleteDraw(${d.id})">✕</button>
             </div>
-            <div>${d.statsHtml}</div>
-            ${d.type === 'profile' ? `<button onclick="generateProfileById(${d.id})" style="width:100%; margin-top:5px; font-size:0.8em; cursor:pointer;">Revoir le profil</button>` : ''}
+            <div style="margin-top:5px; font-size:1.1em;">${d.statsHtml}</div>
+            ${d.type === 'profile' ? `<button onclick="generateProfileById(${d.id})" style="width:100%; margin-top:8px; font-size:0.8em; cursor:pointer; background:#333; color:white; border:1px solid #555; padding:5px; border-radius:3px;">Revoir le profil</button>` : ''}
         </div>`;
     });
 }
 
 // ==========================================
-// 5. ÉDITION DES POINTS (DRAG & DROP)
+// 5. ÉDITION DES POINTS (LIVE UPDATE)
 // ==========================================
 function makeEditable(d) {
     d.editGroup.clearLayers();
     if (!d.visible) return;
 
-    const icon = L.divIcon({ className: 'edit-handle', iconSize: [12, 12] });
+    const icon = L.divIcon({ className: 'edit-handle', iconSize: [14, 14] });
 
     d.ptsGPS.forEach((pt, idx) => {
         const marker = L.marker(pt, { icon, draggable: true }).addTo(d.editGroup);
@@ -219,8 +225,8 @@ function makeEditable(d) {
         marker.on('drag', (e) => {
             d.ptsGPS[idx] = e.latlng;
             d.layer.setLatLngs(d.ptsGPS);
-            recalculateStats(d);
-            if (d.type === 'profile') generateProfile(d); // Mise à jour live du graphique
+            recalculateStats(d); // Mise à jour live du menu à droite
+            if (d.type === 'profile') generateProfile(d); // Mise à jour live du graphique en bas
         });
     });
 }
@@ -273,8 +279,7 @@ function generateProfile(d) {
     for (let i = 0; i <= pointsCount; i++) {
         const t = i / pointsCount;
         const x = l93Pts[0][0] + (l93Pts[1][0] - l93Pts[0][0]) * t;
-        // La fameuse erreur corrigée ici : l93Pts[1][1]
-        const y = l93Pts[0][1] + (l93Pts[1][1] - l93Pts[0][1]) * t; 
+        const y = l93Pts[0][1] + (l93Pts[1][1] - l93Pts[0][1]) * t;
         const z = getZ([x, y]) || 0;
         
         chartData.push({ x: (t * d.totalDist).toFixed(1), y: z });
@@ -296,7 +301,7 @@ function generateProfile(d) {
                 if (elements.length > 0) {
                     const idx = elements[0].index;
                     const pos = geoRef[idx];
-                    if (!cursorMarker) cursorMarker = L.circleMarker([pos[1], pos[0]], { radius: 6, color: 'red', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
+                    if (!cursorMarker) cursorMarker = L.circleMarker([pos[1], pos[0]], { radius: 7, color: 'red', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
                     else cursorMarker.setLatLng([pos[1], pos[0]]);
                 }
             }
@@ -309,7 +314,7 @@ function generateProfile(d) {
 }
 
 // ==========================================
-// 7. SUIVI SOURIS COORDONNÉES
+// 7. COORDONNÉES SOURIS (BAS DROITE)
 // ==========================================
 map.on('mousemove', (e) => {
     const l93 = proj4("EPSG:4326", "EPSG:2154", [e.latlng.lng, e.latlng.lat]);

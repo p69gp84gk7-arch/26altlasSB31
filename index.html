@@ -2,70 +2,86 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler Expert - Style IGN</title>
+    <title>TopoProfiler Expert v4</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --primary: #00d1b2; --bg: #1a1a1a; --panel: #252525; }
-        body { margin: 0; display: flex; height: 100vh; background: var(--bg); font-family: 'Segoe UI', sans-serif; color: white; }
+        :root { --accent: #00d1b2; --bg: #1a1a1a; --panel: #252525; }
+        body { margin: 0; display: flex; height: 100vh; background: var(--bg); font-family: 'Segoe UI', sans-serif; color: white; overflow: hidden; }
         
         #sidebar { width: 350px; padding: 20px; background: var(--panel); z-index: 1000; box-shadow: 5px 0 15px rgba(0,0,0,0.3); overflow-y: auto; }
-        #map { flex-grow: 1; }
+        #map { flex-grow: 1; cursor: crosshair; }
 
-        /* Gestionnaire de couches style IGN */
-        .layer-group { background: #333; margin-bottom: 10px; border-radius: 4px; padding: 10px; border-left: 4px solid var(--primary); }
-        .layer-group h4 { margin: 0 0 10px 0; font-size: 0.9em; text-transform: uppercase; color: #888; }
-        .layer-item { display: flex; justify-content: space-between; font-size: 0.85em; margin-bottom: 5px; background: #444; padding: 5px; border-radius: 3px; }
+        .layer-group { background: #333; margin-bottom: 12px; border-radius: 6px; padding: 12px; border-left: 4px solid var(--accent); }
+        .layer-group h4 { margin: 0 0 10px 0; font-size: 0.85em; text-transform: uppercase; color: #888; letter-spacing: 1px; }
+        
+        #file-list { font-size: 0.8em; color: var(--accent); list-style: none; padding: 0; }
+        #file-list li { margin-bottom: 4px; border-bottom: 1px solid #444; padding-bottom: 2px; }
 
+        /* Fenêtre Profil Surgissante */
         #profile-popup {
-            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 900px; height: 500px; background: white; color: black; border-radius: 8px;
-            display: none; flex-direction: column; z-index: 3000; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+            position: fixed; top: 50%; left: 55%; transform: translate(-50%, -50%);
+            width: 850px; height: 500px; background: white; color: black; border-radius: 12px;
+            display: none; flex-direction: column; z-index: 3000; padding: 25px; box-shadow: 0 25px 60px rgba(0,0,0,0.6);
         }
-        .btn { width: 100%; padding: 10px; margin: 5px 0; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
-        .btn-main { background: var(--primary); color: black; }
-        .btn-draw { background: #f1c40f; color: black; margin-top: 15px; }
+        #profile-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
+        
+        /* Outils de mesure */
+        #coords-display { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.85); padding: 12px; border-radius: 6px; z-index: 1000; font-family: monospace; border: 1px solid var(--accent); line-height: 1.5; }
+        .btn { width: 100%; padding: 12px; margin: 5px 0; cursor: pointer; border: none; border-radius: 6px; font-weight: bold; transition: 0.3s; }
+        .btn-import { background: var(--accent); color: #1a1a1a; }
+        .btn-draw { background: #f1c40f; color: #1a1a1a; font-size: 1.05em; margin-top: 10px; }
+        .btn-clear { background: #e74c3c; color: white; }
     </style>
 </head>
 <body>
 
 <div id="sidebar">
-    <h2 style="color:var(--primary)">TopoProfiler</h2>
+    <h2 style="color:var(--accent); margin-bottom:5px;">TopoProfiler</h2>
+    <p style="font-size: 0.8em; color: #777; margin-bottom: 20px;">Métrologie de terrain précise</p>
     
     <div class="layer-group">
         <h4>Importation</h4>
+        <button class="btn btn-import" onclick="document.getElementById('folder-input').click()">📁 Dossier Complet</button>
+        <button class="btn btn-import" style="background:#34495e; color:white;" onclick="document.getElementById('file-input').click()">📄 Fichiers (.tif, .las, .shp)</button>
         <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
-        <button class="btn btn-main" onclick="document.getElementById('folder-input').click()">📁 Importer Dossier (MNT/LAS)</button>
+        <input type="file" id="file-input" multiple style="display:none">
     </div>
+
+    <button id="btn-draw" class="btn btn-draw">📏 TRACER PROFIL & MESURE</button>
+    <button class="btn btn-clear" onclick="location.reload()">🔄 TOUT EFFACER</button>
 
     <div class="layer-group">
-        <h4>Couches de Terrain (MNT)</h4>
-        <div id="list-mnt"></div>
+        <h4>Données Chargées</h4>
+        <ul id="file-list"></ul>
     </div>
-
-    <div class="layer-group">
-        <h4>Nuages de Points (LAS)</h4>
-        <div id="list-las"></div>
-    </div>
-
-    <button id="btn-draw" class="btn btn-draw">📏 TRACER PROFIL EN LONG</button>
-    <button class="btn" style="background:#e74c3c; color:white;" onclick="location.reload()">🔄 Réinitialiser</button>
 </div>
 
 <div id="map"></div>
 
+<div id="coords-display">
+    E (X): <span id="cur-x">0.00</span> m<br>
+    N (Y): <span id="cur-y">0.00</span> m<br>
+    Alt (Z): <span id="cur-z">0.000</span> m
+</div>
+
 <div id="profile-popup">
-    <div style="display:flex; justify-content:space-between;">
-        <h3 id="profile-title">Profil Altimétrique Multi-couches</h3>
-        <button onclick="document.getElementById('profile-popup').style.display='none'" style="border:none; background:none; font-size:20px; cursor:pointer;">&times;</button>
+    <div id="profile-header">
+        <h3 style="margin:0">Analyse Altymétrique Centimétrique</h3>
+        <div>
+            <button id="btn-export" style="background:#2980b9; color:white; border:none; padding:8px 15px; border-radius:4px; cursor:pointer; font-weight:bold;">💾 EXPORT PNG</button>
+            <button onclick="document.getElementById('profile-popup').style.display='none'" style="border:none; background:none; font-size:28px; cursor:pointer; margin-left:15px;">&times;</button>
+        </div>
     </div>
-    <div style="flex-grow:1"><canvas id="profileChart"></canvas></div>
-    <button id="btn-export" class="btn btn-main" style="width:150px; align-self:flex-end;">💾 PNG</button>
+    <div style="flex-grow:1; position: relative;">
+        <canvas id="profileChart"></canvas>
+    </div>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/shapefile@0.6.6/dist/shapefile.js"></script>
 <script src="main.js"></script>
 </body>
 </html>

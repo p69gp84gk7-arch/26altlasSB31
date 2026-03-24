@@ -1,29 +1,9 @@
-body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
-#ui-container { display: flex; height: 100vh; }
-
-#sidebar { 
-    width: 300px; background: #1a1a1a; color: white; padding: 15px; 
-    display: flex; flex-direction: column; gap: 10px; z-index: 10;
+body { margin: 0; display: flex; height: 100vh; background: #121212; color: white; }
+#sidebar { width: 300px; padding: 15px; background: #1e1e1e; z-index: 1000; }
+#map { flex-grow: 1; height: 100%; }
+#profile-window { 
+    position: absolute; bottom: 20px; left: 320px; right: 20px; 
+    height: 200px; background: rgba(255,255,255,0.9); display: none; border-radius: 8px; padding: 10px;
 }
-
-#main-view { flex-grow: 1; display: flex; flex-direction: column; position: relative; }
-#map { flex-grow: 1; }
-#profile-container { 
-    height: 300px; background: white; border-top: 4px solid #00d1b2; 
-    display: none; padding: 10px; 
-}
-
-.btn { 
-    display: block; width: 100%; padding: 10px; border: none; 
-    border-radius: 4px; cursor: pointer; font-weight: bold; margin-bottom: 5px;
-    text-align: center; color: white;
-}
-
-.btn-import { background: #00d1b2; color: #1a1a1a; }
-.btn-draw { background: #f1c40f; color: #1a1a1a; }
-.btn-clear { background: #e74c3c; }
-.btn-export { background: #3498db; margin-top: auto; }
-
-h2 { color: #00d1b2; margin: 0; }
-.section { background: #2d2d2d; padding: 10px; border-radius: 5px; }
-#file-list { font-size: 0.8em; padding-left: 15px; color: #bbb; }
+.btn { width: 100%; margin: 5px 0; padding: 10px; cursor: pointer; border: none; border-radius: 4px; }
+#btn-measure { background: #f1c40f; color: #333; font-weight: bold; }

@@ -2,56 +2,81 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler Expert Luchon</title>
+    <title>TopoProfiler Expert - Luchon</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --accent: #00d1b2; --panel: #252525; }
-        body { margin: 0; display: flex; height: 100vh; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; }
-        #sidebar-left { width: 280px; padding: 15px; background: var(--panel); border-right: 1px solid #444; }
-        #map { flex-grow: 1; position: relative; }
-        #sidebar-right { width: 320px; padding: 15px; background: var(--panel); border-left: 1px solid #444; overflow-y: auto; }
+        :root { --accent: #00d1b2; --panel: #252525; --dark: #1a1a1a; }
+        body { margin: 0; display: flex; height: 100vh; background: var(--dark); color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         
-        .section-title { color: var(--accent); font-size: 0.8em; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #444; padding-top: 15px;}
-        .tool-btn { width: 100%; padding: 10px; margin: 4px 0; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; text-align: left; }
-        .tool-btn:hover { border-color: var(--accent); }
+        /* Panneau de contrôle Gauche */
+        #sidebar-left { width: 280px; padding: 15px; background: var(--panel); border-right: 1px solid #444; display: flex; flex-direction: column; }
         
-        #profile-window { position: absolute; bottom: 10px; left: 290px; right: 330px; height: 240px; background: white; border-radius: 8px; padding: 10px; z-index: 1001; display: none; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); }
-        .measure-card { background: #111; padding: 10px; margin-bottom: 10px; border-radius: 4px; border-left: 4px solid var(--accent); font-size: 0.9em; position: relative;}
-        .btn-del { position: absolute; top: 5px; right: 5px; color: #ff4757; cursor: pointer; background: none; border: none; }
-        .coords-box { background: #000; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85em; margin-top: 20px; border: 1px solid #333; }
+        /* Carte Centrale */
+        #map { flex-grow: 1; position: relative; background: #000; }
+
+        /* Panneau de Mesures Droite */
+        #sidebar-right { width: 320px; padding: 15px; background: var(--panel); border-left: 1px solid #444; overflow-y: auto; display: flex; flex-direction: column; }
+
+        .section-title { color: var(--accent); font-size: 0.85em; font-weight: bold; text-transform: uppercase; margin: 15px 0 10px 0; border-bottom: 1px solid #444; padding-bottom: 5px; }
+        
+        .tool-btn { width: 100%; padding: 12px; margin: 5px 0; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; text-align: left; transition: 0.2s; }
+        .tool-btn:hover { border-color: var(--accent); background: #444; }
+        
+        /* Fenêtre de Profil (Bas) */
+        #profile-window { 
+            position: absolute; bottom: 20px; left: 300px; right: 340px; 
+            height: 250px; background: white; border-radius: 8px; padding: 15px; 
+            z-index: 2000; display: none; box-shadow: 0 -10px 30px rgba(0,0,0,0.5); 
+        }
+
+        /* Cartes de mesures */
+        .measure-card { background: #111; padding: 12px; margin-bottom: 10px; border-radius: 4px; border-left: 4px solid var(--accent); position: relative; font-size: 0.9em; line-height: 1.4; }
+        .btn-del { position: absolute; top: 8px; right: 8px; color: #ff4757; background: none; border: none; cursor: pointer; font-weight: bold; }
+
+        /* Coordonnées Temps Réel */
+        .coords-box { background: #000; padding: 15px; border-radius: 4px; font-family: monospace; font-size: 0.9em; margin-top: auto; border: 1px solid #333; }
+        .z-val { color: var(--accent); font-weight: bold; font-size: 1.1em; }
+
+        /* Style des poignées d'édition sur la carte */
+        .leaflet-div-icon { background: white; border: 2px solid var(--accent); border-radius: 50%; }
     </style>
 </head>
 <body>
 
     <div id="sidebar-left">
-        <h3 style="color:var(--accent)">TopoProfiler</h3>
-        <input type="file" id="file-input" multiple style="width:100%; font-size:0.8em;">
-        <input type="file" id="folder-input" webkitdirectory directory multiple style="width:100%; font-size:0.8em; margin-top:5px;">
+        <h2 style="color:var(--accent); margin-top:0;">TopoProfiler</h2>
+        <div class="section-title">Import MNT (.tif)</div>
+        <input type="file" id="file-input" multiple style="font-size:0.8em; margin-bottom:8px;">
+        <input type="file" id="folder-input" webkitdirectory directory multiple style="font-size:0.8em;">
+        
         <div id="layer-manager" style="margin-top:20px;"></div>
     </div>
 
     <div id="map"></div>
 
     <div id="sidebar-right">
-        <div class="section-title">Mesures (Éditables)</div>
-        <button class="tool-btn" onclick="initMeasure('line')">📏 Ligne / Multi-points</button>
-        <button class="tool-btn" onclick="initMeasure('area')">📐 Surface (Polygone)</button>
+        <div class="section-title">Outils de Mesure</div>
+        <button class="tool-btn" onclick="startDrawing('line')">📏 Ligne (Multi-points)</button>
+        <button class="tool-btn" onclick="startDrawing('area')">📐 Surface (Polygone)</button>
         
-        <div id="measure-list" style="margin-top:20px;"></div>
+        <div class="section-title">Mesures Éditables</div>
+        <div id="measure-list">
+            <p style="font-size:0.8em; color:#666; text-align:center;">Tracez sur la carte et double-cliquez pour terminer.</p>
+        </div>
 
         <div class="coords-box">
-            X: <span id="cur-x">0.00</span><br>
-            Y: <span id="cur-y">0.00</span><br>
-            Z: <span id="cur-z" style="color:var(--accent)">0.00</span> m
+            X (L93): <span id="cur-x">0.00</span><br>
+            Y (L93): <span id="cur-y">0.00</span><br>
+            Z (Alt): <span id="cur-z" class="z-val">0.00</span> m
         </div>
     </div>
 
     <div id="profile-window">
-        <div style="display:flex; justify-content:space-between; color:black; margin-bottom:5px;">
-            <small>Profil Altimétrique (m)</small>
-            <button onclick="exportCSV()" style="font-size:0.7em;">Export CSV</button>
+        <div style="display:flex; justify-content:space-between; color:#333; margin-bottom:10px;">
+            <strong id="prof-title">Profil Altimétrique</strong>
+            <button onclick="document.getElementById('profile-window').style.display='none'" style="border:none; background:none; cursor:pointer;">✕</button>
         </div>
-        <div style="height:190px;"><canvas id="profileChart"></canvas></div>
+        <div style="height:180px;"><canvas id="profileChart"></canvas></div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

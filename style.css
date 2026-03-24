@@ -1,49 +1,29 @@
-body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-
+body, html { margin: 0; padding: 0; height: 100%; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
 #ui-container { display: flex; height: 100vh; }
 
 #sidebar { 
-    width: 320px; 
-    background: #1e1e1e; 
-    color: #e0e0e0; 
-    padding: 20px; 
-    box-shadow: 2px 0 10px rgba(0,0,0,0.5);
-    z-index: 10;
-    overflow-y: auto;
+    width: 300px; background: #1a1a1a; color: white; padding: 15px; 
+    display: flex; flex-direction: column; gap: 10px; z-index: 10;
 }
 
-#map { flex-grow: 1; background: #0b0b0b; }
+#main-view { flex-grow: 1; display: flex; flex-direction: column; position: relative; }
+#map { flex-grow: 1; }
+#profile-container { 
+    height: 300px; background: white; border-top: 4px solid #00d1b2; 
+    display: none; padding: 10px; 
+}
+
+.btn { 
+    display: block; width: 100%; padding: 10px; border: none; 
+    border-radius: 4px; cursor: pointer; font-weight: bold; margin-bottom: 5px;
+    text-align: center; color: white;
+}
+
+.btn-import { background: #00d1b2; color: #1a1a1a; }
+.btn-draw { background: #f1c40f; color: #1a1a1a; }
+.btn-clear { background: #e74c3c; }
+.btn-export { background: #3498db; margin-top: auto; }
 
 h2 { color: #00d1b2; margin: 0; }
-.subtitle { font-size: 0.8em; color: #888; margin-bottom: 20px; }
-
-.import-section { margin-bottom: 25px; }
-
-.custom-file-upload {
-    display: block;
-    padding: 10px;
-    background: #00d1b2;
-    color: black;
-    text-align: center;
-    border-radius: 4px;
-    cursor: pointer;
-    font-weight: bold;
-}
-
-#file-input { display: none; }
-
-#layer-manager { 
-    background: #2d2d2d; 
-    padding: 15px; 
-    border-radius: 6px; 
-    margin-bottom: 20px;
-}
-
-#file-list { 
-    list-style: none; 
-    padding: 0; 
-    font-size: 0.85em; 
-    color: #aaa;
-}
-
-#file-list li { margin-bottom: 5px; border-bottom: 1px solid #333; padding-bottom: 3px; }
+.section { background: #2d2d2d; padding: 10px; border-radius: 5px; }
+#file-list { font-size: 0.8em; padding-left: 15px; color: #bbb; }

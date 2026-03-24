@@ -1,89 +1,127 @@
-// 1. Définition des projections (Exemple: Lambert 93 vers WGS84)
-// Vous pourrez adapter 'EPSG:2154' selon vos données locales
-proj4.defs("EPSG:2154","+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs");
+// --- CONFIGURATION ---
+proj4.defs("EPSG:2154","+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +units=m +no_defs");
 
-// 2. Initialisation de la carte
+let linePoints = [];
+let isDrawing = false;
+let chartInstance = null;
+let loadedMNTs = []; // Stockage des dalles lues
+
+// --- INITIALISATION CARTE ---
 const map = new maplibregl.Map({
     container: 'map',
     style: {
         version: 8,
         sources: {
-            'satellite': {
-                type: 'raster',
-                tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-                tileSize: 256,
-                attribution: 'Esri'
-            },
-            'osm-topo': {
-                type: 'raster',
-                tiles: ['https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'],
-                tileSize: 256,
-                attribution: 'OSM'
-            }
+            'sat': { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 },
+            'topo': { type: 'raster', tiles: ['https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'], tileSize: 256, subdomains: 'abc' }
         },
         layers: [
-            { id: 'layer-satellite', type: 'raster', source: 'satellite', layout: { visibility: 'visible' } },
-            { id: 'layer-topo', type: 'raster', source: 'osm-topo', layout: { visibility: 'none' } }
+            { id: 'layer-sat', type: 'raster', source: 'sat', layout: { visibility: 'visible' } },
+            { id: 'layer-topo', type: 'raster', source: 'topo', layout: { visibility: 'none' } }
         ]
     },
-    center: [2.35, 48.85],
-    zoom: 5
+    center: [2.35, 48.85], zoom: 5
 });
 
-// 3. Gestion du changement de fond de carte
-document.querySelectorAll('input[name="bg"]').forEach(input => {
-    input.addEventListener('change', (e) => {
-        const val = e.target.value;
-        map.setLayoutProperty('layer-satellite', 'visibility', val === 'sat' ? 'visible' : 'none');
-        map.setLayoutProperty('layer-topo', 'visibility', val === 'topo' ? 'visible' : 'none');
-    });
-});
-
-// 4. Gestion de l'importation du dossier
-document.getElementById('file-input').addEventListener('change', async (event) => {
-    const files = Array.from(event.target.files);
-    const listElement = document.getElementById('file-list');
-    listElement.innerHTML = ''; // Réinitialise la liste
-
-    // Filtrage
-    const mntFiles = files.filter(f => f.name.toLowerCase().endsWith('.tif') || f.name.toLowerCase().endsWith('.tiff'));
-    const lasFiles = files.filter(f => f.name.toLowerCase().endsWith('.las') || f.name.toLowerCase().endsWith('.laz'));
-
-    // Affichage dans l'interface
-    [...mntFiles, ...lasFiles].forEach(f => {
-        const li = document.createElement('li');
-        li.textContent = f.name;
-        listElement.appendChild(li);
-    });
-
-    // Traitement des MNT
+// --- GESTION DOSSIER & MNT ---
+document.getElementById('file-input').addEventListener('change', async (e) => {
+    const files = Array.from(e.target.files);
+    const mntFiles = files.filter(f => f.name.toLowerCase().endsWith('.tif'));
+    
     for (const file of mntFiles) {
-        await analyzeMNT(file);
+        const li = document.createElement('li');
+        li.textContent = file.name;
+        document.getElementById('file-list').appendChild(li);
+        
+        // Lecture simplifiée du GeoTIFF
+        const buffer = await file.arrayBuffer();
+        const tiff = await GeoTIFF.fromArrayBuffer(buffer);
+        const image = await tiff.getImage();
+        loadedMNTs.push({ name: file.name, image, bbox: image.getBoundingBox() });
     }
+    alert(`${mntFiles.length} dalles MNT chargées.`);
 });
 
-// 5. Fonction d'analyse d'une dalle MNT
-async function analyzeMNT(file) {
-    try {
-        const arrayBuffer = await file.arrayBuffer();
-        const tiff = await GeoTIFF.fromArrayBuffer(arrayBuffer);
-        const image = await tiff.getImage();
-        
-        // Récupère l'emprise (Bounding Box) du fichier
-        const bbox = image.getBoundingBox(); // [minX, minY, maxX, maxY]
-        
-        // Conversion des coordonnées Lambert 93 (2154) vers GPS (WGS84)
-        const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
-        const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
+// --- OUTIL DE DESSIN ---
+document.getElementById('btn-draw').addEventListener('click', () => {
+    isDrawing = true;
+    linePoints = [];
+    map.getCanvas().style.cursor = 'crosshair';
+});
 
-        console.log(`Dalle ${file.name} convertie :`, {sw, ne});
+map.on('click', (e) => {
+    if (!isDrawing) return;
+    const pt = [e.lngLat.lng, e.lngLat.lat];
+    linePoints.push(pt);
+    updateMapLine();
+});
 
-        // Zoomer sur la première dalle trouvée
-        map.fitBounds([sw, ne], { padding: 50 });
+map.on('dblclick', (e) => {
+    if (!isDrawing) return;
+    isDrawing = false;
+    map.getCanvas().style.cursor = '';
+    generateProfile();
+});
 
-        // TODO : Dessiner un rectangle sur la carte pour matérialiser la dalle
-        
-    } catch (e) {
-        console.error("Erreur sur le fichier " + file.name, e);
+function updateMapLine() {
+    const data = { type: 'Feature', geometry: { type: 'LineString', coordinates: linePoints } };
+    if (map.getSource('path')) map.getSource('path').setData(data);
+    else {
+        map.addSource('path', { type: 'geojson', data });
+        map.addLayer({ id: 'path', type: 'line', source: 'path', paint: { 'line-color': '#f1c40f', 'line-width': 4 } });
     }
 }
+
+// --- CALCUL DU PROFIL & DISTANCE ---
+async function generateProfile() {
+    if (linePoints.length < 2) return;
+    let data = [];
+    let dist = 0;
+
+    for (let i = 0; i < linePoints.length; i++) {
+        if (i > 0) dist += getDistance(linePoints[i-1], linePoints[i]);
+        
+        // Ici : Simulation d'altitude (Lien avec analyzeMNT à finaliser selon l'EPSG)
+        let alt = 100 + Math.random() * 50; 
+        data.push({ x: Math.round(dist), y: alt });
+    }
+    renderChart(data);
+}
+
+function getDistance(p1, p2) {
+    const R = 6371000;
+    const dLat = (p2[1]-p1[1]) * Math.PI/180;
+    const dLon = (p2[0]-p1[0]) * Math.PI/180;
+    const a = Math.sin(dLat/2)**2 + Math.cos(p1[1]*Math.PI/180)*Math.cos(p2[1]*Math.PI/180)*Math.sin(dLon/2)**2;
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// --- RENDER & EXPORT ---
+function renderChart(data) {
+    document.getElementById('profile-container').style.display = 'block';
+    document.getElementById('btn-export').style.display = 'block';
+    const ctx = document.getElementById('profileChart').getContext('2d');
+    if (chartInstance) chartInstance.destroy();
+    chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
+            datasets: [{
+                label: 'Profil (m)', data: data, borderColor: '#00d1b2', fill: true, backgroundColor: 'rgba(0,209,178,0.1)', tension: 0.1
+            }]
+        },
+        options: { scales: { x: { type: 'linear', title: {display:true, text:'Distance (m)'} } } }
+    });
+}
+
+document.getElementById('btn-export').addEventListener('click', () => {
+    const link = document.createElement('a');
+    link.download = 'profil.png';
+    link.href = document.getElementById('profileChart').toDataURL();
+    link.click();
+});
+
+document.getElementById('btn-clear').addEventListener('click', () => {
+    linePoints = [];
+    if (map.getSource('path')) map.getSource('path').setData({type:'FeatureCollection', features:[]});
+    document.getElementById('profile-container').style.display = 'none';
+});

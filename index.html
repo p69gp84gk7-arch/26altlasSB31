@@ -2,66 +2,67 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler Expert v4</title>
+    <title>TopoProfiler Luchon Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --accent: #00d1b2; --bg: #1a1a1a; --panel: #252525; }
-        body { margin: 0; display: flex; height: 100vh; background: var(--bg); font-family: 'Segoe UI', sans-serif; color: white; overflow: hidden; }
+        :root { --accent: #00d1b2; }
+        body { margin: 0; display: flex; height: 100vh; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; }
+        #sidebar { width: 320px; padding: 20px; background: #252525; z-index: 1000; box-shadow: 5px 0 15px rgba(0,0,0,0.5); }
+        #map { flex-grow: 1; background: #000; cursor: crosshair; }
         
-        #sidebar { width: 350px; padding: 20px; background: var(--panel); z-index: 1000; box-shadow: 5px 0 15px rgba(0,0,0,0.3); overflow-y: auto; }
-        #map { flex-grow: 1; cursor: crosshair; }
-
-        .layer-group { background: #333; margin-bottom: 12px; border-radius: 6px; padding: 12px; border-left: 4px solid var(--accent); }
-        .layer-group h4 { margin: 0 0 10px 0; font-size: 0.85em; text-transform: uppercase; color: #888; letter-spacing: 1px; }
-        
-        #file-list { font-size: 0.8em; color: var(--accent); list-style: none; padding: 0; }
-        #file-list li { margin-bottom: 4px; border-bottom: 1px solid #444; padding-bottom: 2px; }
-
-        /* Fenêtre Profil Surgissante */
-        #profile-popup {
-            position: fixed; top: 50%; left: 55%; transform: translate(-50%, -50%);
-            width: 850px; height: 500px; background: white; color: black; border-radius: 12px;
-            display: none; flex-direction: column; z-index: 3000; padding: 25px; box-shadow: 0 25px 60px rgba(0,0,0,0.6);
+        #coords-display { 
+            position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8); 
+            padding: 15px; border-radius: 8px; z-index: 1000; border: 1px solid var(--accent);
+            font-family: monospace; font-size: 14px; pointer-events: none;
         }
-        #profile-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eee; padding-bottom: 10px; margin-bottom: 15px; }
         
-        /* Outils de mesure */
-        #coords-display { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.85); padding: 12px; border-radius: 6px; z-index: 1000; font-family: monospace; border: 1px solid var(--accent); line-height: 1.5; }
-        .btn { width: 100%; padding: 12px; margin: 5px 0; cursor: pointer; border: none; border-radius: 6px; font-weight: bold; transition: 0.3s; }
-        .btn-import { background: var(--accent); color: #1a1a1a; }
-        .btn-draw { background: #f1c40f; color: #1a1a1a; font-size: 1.05em; margin-top: 10px; }
-        .btn-clear { background: #e74c3c; color: white; }
+        #profile-popup {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 800px; height: 450px; background: white; color: black; border-radius: 10px;
+            display: none; flex-direction: column; z-index: 3000; padding: 20px;
+        }
+        .btn { width: 100%; padding: 12px; margin: 5px 0; cursor: pointer; border: none; border-radius: 5px; font-weight: bold; }
+        .btn-main { background: var(--accent); color: black; }
+        .btn-draw { background: #f1c40f; }
     </style>
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 
 <div id="sidebar">
-    <h2 style="color:var(--accent); margin-bottom:5px;">TopoProfiler</h2>
-    <p style="font-size: 0.8em; color: #777; margin-bottom: 20px;">Métrologie de terrain précise</p>
-    
-    <div class="layer-group">
-        <h4>Importation</h4>
-        <button class="btn btn-import" onclick="document.getElementById('folder-input').click()">📁 Dossier Complet</button>
-        <button class="btn btn-import" style="background:#34495e; color:white;" onclick="document.getElementById('file-input').click()">📄 Fichiers (.tif, .las, .shp)</button>
-        <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
-        <input type="file" id="file-input" multiple style="display:none">
+    <h2 style="color:var(--accent)">TopoProfiler</h2>
+    <div style="background:#333; padding:10px; border-radius:5px; margin-bottom:15px;">
+        <p style="font-size:0.8em; margin:0;">1. Importez vos .tif ou .shp<br>2. Cliquez sur Tracer<br>3. Double-cliquez pour finir</p>
     </div>
-
-    <button id="btn-draw" class="btn btn-draw">📏 TRACER PROFIL & MESURE</button>
-    <button class="btn btn-clear" onclick="location.reload()">🔄 TOUT EFFACER</button>
-
-    <div class="layer-group">
-        <h4>Données Chargées</h4>
-        <ul id="file-list"></ul>
-    </div>
+    <input type="file" id="file-input" multiple style="margin-bottom:10px;">
+    <button id="btn-draw" class="btn btn-draw">📏 TRACER PROFIL</button>
+    <button onclick="location.reload()" class="btn" style="background:#444; color:white;">🔄 RÉINITIALISER</button>
+    <ul id="file-list" style="font-size:0.8em; color:var(--accent); padding-left:15px; margin-top:20px;"></ul>
 </div>
 
 <div id="map"></div>
 
+<div id="coords-display">
+    X (L93): <span id="cur-x">0.00</span> m<br>
+    Y (L93): <span id="cur-y">0.00</span> m<br>
+    <b>Alt (Z): <span id="cur-z" style="color:var(--accent)">0.00</span> m</b>
+</div>
+
+<div id="profile-popup">
+    <div style="display:flex; justify-content:space-between; border-bottom:1px solid #ddd; padding-bottom:10px;">
+        <h3 style="margin:0">Profil Altimétrique (m)</h3>
+        <button onclick="document.getElementById('profile-popup').style.display='none'">&times;</button>
+    </div>
+    <div style="flex-grow:1"><canvas id="profileChart"></canvas></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/shapefile@0.6.6/dist/shapefile.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
 <div id="coords-display">
     E (X): <span id="cur-x">0.00</span> m<br>
     N (Y): <span id="cur-y">0.00</span> m<br>

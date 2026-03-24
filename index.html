@@ -2,66 +2,83 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler Pro - Luchon</title>
+    <title>TopoProfiler Expert - Luchon</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; display: flex; height: 100vh; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; }
-        #sidebar { width: 320px; padding: 20px; background: #252525; z-index: 1000; box-shadow: 2px 0 10px rgba(0,0,0,0.5); display: flex; flex-direction: column; }
-        #map { flex-grow: 1; height: 100%; background: #000; cursor: crosshair; }
+        :root { --accent: #00d1b2; --dark: #1a1a1a; --panel: #252525; }
+        body { margin: 0; display: flex; height: 100vh; background: var(--dark); color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         
-        /* Bandeau de profil en bas */
-        #profile-window { 
-            position: absolute; bottom: 10px; left: 330px; right: 10px; 
-            height: 280px; background: white; display: none; border-radius: 8px; padding: 15px; z-index: 1001;
-            box-shadow: 0 -5px 15px rgba(0,0,0,0.3);
-        }
+        /* Colonne Gauche : Imports */
+        #sidebar-left { width: 280px; padding: 15px; background: var(--panel); border-right: 1px solid #444; display: flex; flex-direction: column; }
         
-        .layer-item { 
-            background: #333; margin: 5px 0; padding: 8px; border-radius: 4px; 
-            display: flex; justify-content: space-between; align-items: center; font-size: 0.85em;
-        }
-        .btn-del { background: #e74c3c; color: white; border: none; padding: 2px 6px; cursor: pointer; border-radius: 3px; }
+        /* Centre : Carte */
+        #map { flex-grow: 1; position: relative; }
+
+        /* Colonne Droite : Mesures & Outils */
+        #sidebar-right { width: 320px; padding: 15px; background: var(--panel); border-left: 1px solid #444; display: flex; flex-direction: column; overflow-y: auto; }
+
+        .section-title { color: var(--accent); font-size: 0.9em; font-weight: bold; text-transform: uppercase; margin-bottom: 10px; border-bottom: 1px solid #444; padding-bottom: 5px; }
         
-        #coords-display { margin-top: auto; padding: 10px; background: #111; border-radius: 5px; font-family: monospace; border-left: 3px solid #00d1b2; }
-        .btn { width: 100%; padding: 12px; margin: 5px 0; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        #btn-measure { background: #f1c40f; color: black; }
-        .export-btns { display: flex; gap: 5px; margin-top: 10px; }
-        .btn-exp { flex: 1; padding: 5px; font-size: 0.8em; background: #3498db; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        /* Boutons d'outils */
+        .tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 15px; }
+        .btn-tool { background: #333; color: white; border: 1px solid #555; padding: 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em; transition: 0.2s; }
+        .btn-tool:hover { background: #444; border-color: var(--accent); }
+        .btn-tool.active { background: var(--accent); color: black; font-weight: bold; }
+
+        /* Liste des mesures */
+        .measure-card { background: #111; border-radius: 5px; padding: 10px; margin-bottom: 10px; border-left: 4px solid var(--accent); position: relative; }
+        .measure-card h5 { margin: 0 0 5px 0; font-size: 0.9em; }
+        .measure-card p { margin: 2px 0; font-size: 0.85em; color: #ccc; }
+        .btn-del-mini { position: absolute; top: 5px; right: 5px; background: none; border: none; color: #ff4757; cursor: pointer; }
+
+        #profile-window { position: absolute; bottom: 10px; left: 295px; right: 335px; height: 220px; background: white; display: none; border-radius: 8px; padding: 10px; z-index: 1001; }
+        
+        .coords-box { background: #000; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85em; margin-top: auto; }
     </style>
 </head>
 <body>
 
-    <div id="sidebar">
-        <h2>TopoProfiler</h2>
+    <div id="sidebar-left">
+        <h3 style="color:var(--accent); margin:0;">TopoProfiler</h3>
+        <p style="font-size:0.7em; color:#777; margin-bottom:20px;">Luchon Precision v5.0</p>
         
-        <label style="font-size: 0.8em; color: #888;">Importation (Fichiers ou Dossiers) :</label>
-        <input type="file" id="file-input" multiple style="margin-top:5px;">
-        <input type="file" id="folder-input" webkitdirectory directory multiple style="margin-top:5px;">
+        <div class="section-title">Données</div>
+        <input type="file" id="file-input" multiple style="font-size:0.8em; margin-bottom:5px;">
+        <input type="file" id="folder-input" webkitdirectory directory multiple style="font-size:0.8em;">
         
-        <button id="btn-measure" class="btn">📏 Tracer Profil (2 points)</button>
-
-        <div style="margin-top: 20px; flex-grow: 1; overflow-y: auto;">
-            <strong style="font-size: 0.9em;">Gestion des couches :</strong>
-            <div id="layer-manager"></div>
-        </div>
-
-        <div id="coords-display">
-            Z: <span id="cur-z" style="color:#00d1b2; font-weight:bold;">0.00</span> m
-        </div>
+        <div id="layer-manager" style="margin-top:20px;"></div>
     </div>
 
     <div id="map"></div>
 
-    <div id="profile-window">
-        <div style="display:flex; justify-content:space-between; color: black; margin-bottom: 5px;">
-            <strong id="prof-title">Profil Altimétrique</strong>
-            <div class="export-btns">
-                <button onclick="exportData('png')" class="btn-exp">PNG</button>
-                <button onclick="exportData('csv')" class="btn-exp">CSV</button>
-                <button onclick="document.getElementById('profile-window').style.display='none'" style="background:#888" class="btn-exp">Fermer</button>
-            </div>
+    <div id="sidebar-right">
+        <div class="section-title">Outils de Mesure</div>
+        <div class="tool-grid">
+            <button class="btn-tool" onclick="startMeasure('line')">📏 Longueur</button>
+            <button class="btn-tool" onclick="startMeasure('area')">📐 Surface</button>
+            <button class="btn-tool" onclick="startMeasure('slope')">📉 Pente %</button>
+            <button class="btn-tool" onclick="startMeasure('profile')">📈 Profil Z</button>
         </div>
-        <div style="height: 200px;"><canvas id="profileChart"></canvas></div>
+
+        <div class="section-title">Mesures en mémoire</div>
+        <div id="measure-list"></div>
+
+        <div class="section-title">Export & Vue</div>
+        <button class="btn-tool" style="width:100%" onclick="window.print()">🖨️ Exporter la vue (PDF/Image)</button>
+        <select id="map-scale" class="btn-tool" style="width:100%; margin-top:5px;" onchange="changeScale()">
+            <option value="14">Échelle : Quartier</option>
+            <option value="16">Échelle : Terrain</option>
+            <option value="18">Échelle : Centimétrique</option>
+        </select>
+
+        <div class="coords-box">
+            X: <span id="cur-x">0</span> | Y: <span id="cur-y">0</span><br>
+            Z: <span id="cur-z" style="color:var(--accent)">0.00</span> m
+        </div>
+    </div>
+
+    <div id="profile-window">
+        <canvas id="profileChart"></canvas>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

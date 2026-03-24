@@ -2,38 +2,47 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler v2 - MNT & LAS</title>
+    <title>TopoProfiler v3 - Import Fix</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         body { margin: 0; display: flex; height: 100vh; background: #1a1a1a; color: white; font-family: sans-serif; }
-        #sidebar { width: 300px; padding: 20px; background: #252525; z-index: 1000; box-shadow: 2px 0 10px rgba(0,0,0,0.5); }
-        #map { flex-grow: 1; height: 100%; background: #000; } /* Fond noir si la carte met du temps */
+        #sidebar { width: 320px; padding: 20px; background: #252525; z-index: 1000; overflow-y: auto; }
+        #map { flex-grow: 1; height: 100%; }
+        
+        /* Zone de dépôt visuelle */
+        #drop-zone {
+            border: 2px dashed #00d1b2;
+            padding: 20px;
+            text-align: center;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            transition: 0.3s;
+        }
+        #drop-zone.hover { background: rgba(0, 209, 178, 0.2); }
+        
         #profile-window { 
-            position: absolute; bottom: 20px; left: 320px; right: 20px; 
+            position: absolute; bottom: 20px; left: 340px; right: 20px; 
             height: 250px; background: white; display: none; border-radius: 8px; padding: 15px; z-index: 1001;
         }
         .btn { width: 100%; padding: 12px; margin: 5px 0; border: none; border-radius: 4px; cursor: pointer; font-weight: bold; }
         #btn-measure { background: #f1c40f; color: black; }
-        #btn-export { background: #3498db; color: white; }
-        input[type="file"] { margin: 15px 0; color: #bbb; }
     </style>
 </head>
 <body>
 
     <div id="sidebar">
         <h2>TopoProfiler</h2>
-        <p style="font-size: 0.8em; color: #888;">Charger un dossier contenant des .tif ou .las</p>
         
-        <input type="file" id="file-input" webkitdirectory directory multiple>
-        
-        <button id="btn-measure" class="btn">📏 Tracer Profil en Long</button>
-        <button id="btn-export" class="btn" style="display:none;">💾 Export PNG</button>
-        <button onclick="location.reload()" class="btn" style="background:#444; color:white;">🔄 Actualiser</button>
-
-        <div id="file-info">
-            <h4 style="margin-top:20px;">Fichiers :</h4>
-            <ul id="file-list" style="font-size: 0.8em; color: #00d1b2; padding-left: 15px;"></ul>
+        <div id="drop-zone">
+            Glissez votre dossier ici<br>ou<br>
+            <input type="file" id="file-input" webkitdirectory directory multiple>
         </div>
+        
+        <button id="btn-measure" class="btn">📏 Tracer Profil</button>
+        <button id="btn-export" class="btn" style="background:#3498db; color:white; display:none;">💾 Export PNG</button>
+        
+        <h4>Fichiers détectés :</h4>
+        <ul id="file-list" style="font-size: 0.75em; color: #00d1b2;"></ul>
     </div>
 
     <div id="map"></div>

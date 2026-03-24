@@ -2,13 +2,12 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler - Version Stable</title>
+    <title>TopoProfiler - Édition & Mesures</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #00d1b2; --bg: #1a1a1a; --panel: #252525; }
         body { margin: 0; display: flex; height: 100vh; background: var(--bg); color: white; font-family: sans-serif; overflow: hidden; }
         
-        /* Layout */
         #left-panel { width: 260px; background: var(--panel); padding: 15px; border-right: 1px solid #444; display: flex; flex-direction: column; }
         #map { flex-grow: 1; background: #000; cursor: crosshair; }
         #right-panel { width: 300px; background: var(--panel); padding: 15px; border-left: 1px solid #444; display: flex; flex-direction: column; }
@@ -16,25 +15,32 @@
         h3 { color: var(--accent); margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px; }
         .subtitle { font-size: 0.8em; color: #888; text-transform: uppercase; margin-bottom: 10px; font-weight: bold; }
 
-        /* Boutons et Inputs */
-        .btn-main { width: 100%; padding: 12px; background: #f1c40f; color: black; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; margin-bottom: 15px; }
-        .btn-main:hover { background: #d4ac0d; }
+        /* Boutons d'Outils */
+        .btn-tool { width: 100%; padding: 10px; margin-bottom: 8px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.2s; opacity: 0.8; }
+        .btn-tool:hover { opacity: 1; }
+        .btn-tool.active { box-shadow: 0 0 0 3px white; opacity: 1; }
         
-        /* Cartes de gestion (Layers & Mesures) */
-        .card { background: #111; padding: 10px; margin-bottom: 10px; border-radius: 4px; border-left: 3px solid var(--accent); position: relative; font-size: 0.85em; }
+        #btn-profile { background: #f1c40f; color: black; }
+        #btn-line { background: #3498db; color: white; }
+        #btn-area { background: #e67e22; color: white; }
+
+        /* Cartes */
+        .card { background: #111; padding: 10px; margin-bottom: 10px; border-radius: 4px; border-left: 4px solid var(--accent); position: relative; font-size: 0.85em; line-height: 1.4; }
         .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
-        .btn-del { color: #ff4757; background: none; border: none; cursor: pointer; font-weight: bold; }
-        .color-picker { border: none; width: 25px; height: 25px; cursor: pointer; padding: 0; background: none; }
+        .btn-del { color: #ff4757; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 1.1em; }
+        .color-picker { border: none; width: 20px; height: 20px; cursor: pointer; padding: 0; background: none; }
 
         /* Fenêtre Profil */
         #profile-window {
             position: absolute; bottom: 20px; left: 280px; right: 320px; height: 220px;
             background: white; border-radius: 8px; padding: 15px; z-index: 2000;
-            display: none; box-shadow: 0 5px 20px rgba(0,0,0,0.5); border: 2px solid var(--accent);
+            display: none; box-shadow: 0 5px 20px rgba(0,0,0,0.5); border: 2px solid #f1c40f;
         }
 
-        /* Coordonnées */
         .coords { background: #000; padding: 10px; border-radius: 4px; font-family: monospace; margin-top: auto; border: 1px solid #333; }
+
+        /* Poignées d'édition sur la carte */
+        .edit-handle { background: white; border: 2px solid #e74c3c; border-radius: 50%; cursor: move; box-shadow: 0 0 3px rgba(0,0,0,0.5); }
     </style>
 </head>
 <body>
@@ -51,9 +57,12 @@
     <div id="map"></div>
 
     <div id="right-panel">
-        <button class="btn-main" onclick="startLineTool()">📏 Tracer Ligne (2 Points)</button>
+        <div class="subtitle">Outils (Double-clic pour finir)</div>
+        <button id="btn-profile" class="btn-tool" onclick="startTool('profile')">📈 Profil Altimétrique (2 Pts)</button>
+        <button id="btn-line" class="btn-tool" onclick="startTool('line')">📏 Longueur & Pente</button>
+        <button id="btn-area" class="btn-tool" onclick="startTool('area')">📐 Surface (Polygone)</button>
         
-        <div class="subtitle">Tracés en mémoire</div>
+        <div class="subtitle" style="margin-top: 15px;">Mesures Éditables</div>
         <div id="measure-list" style="flex-grow:1; overflow-y:auto;"></div>
 
         <div class="coords">
@@ -66,7 +75,7 @@
     <div id="profile-window">
         <div style="display:flex; justify-content:space-between; color:black; margin-bottom:5px; font-weight:bold;">
             <span>Profil Altimétrique</span>
-            <button onclick="document.getElementById('profile-window').style.display='none'" style="cursor:pointer;">✕ Fermer</button>
+            <button onclick="document.getElementById('profile-window').style.display='none'" style="cursor:pointer; background:none; border:none; font-size:1.2em;">✕</button>
         </div>
         <div style="height:170px;"><canvas id="profileChart"></canvas></div>
     </div>

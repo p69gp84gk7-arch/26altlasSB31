@@ -3,12 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TopoProfiler - A à Z</title>
+    <title>TopoProfiler - Lecteur MNT & LAS</title>
     
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
 
     <link rel="stylesheet" href="style.css">
 </head>
@@ -17,20 +18,28 @@
 <div id="ui-container">
     <div id="sidebar">
         <h2>TopoProfiler</h2>
+        <p class="subtitle">Analyse de profil en long</p>
         <hr>
-        <label>1. Importer un fichier</label>
-        <input type="file" id="file-input" accept=".tif,.tiff,.las,.laz">
         
+        <div class="import-section">
+            <label for="file-input" class="custom-file-upload">
+                📁 Choisir un dossier (MNT/LAS)
+            </label>
+            <input type="file" id="file-input" webkitdirectory directory multiple>
+        </div>
+
         <div id="layer-manager">
-            <h3>Couches</h3>
-            <label><input type="radio" name="bg" value="sat" checked> Satellite</label><br>
-            <label><input type="radio" name="bg" value="topo"> Topographie</label>
+            <h4>Couches de fond</h4>
+            <label><input type="radio" name="bg" value="sat" checked> Satellite (ArcGIS)</label><br>
+            <label><input type="radio" name="bg" value="topo"> Topographie (OSM)</label>
         </div>
         
-        <div id="stats">
-            <p>Fichier : <span id="file-name">-</span></p>
+        <div id="file-list-container">
+            <h4>Fichiers chargés</h4>
+            <ul id="file-list"></ul>
         </div>
     </div>
+    
     <div id="map"></div>
 </div>
 

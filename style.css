@@ -1,0 +1,14 @@
+body { margin: 0; font-family: sans-serif; }
+#ui-container { display: flex; height: 100vh; }
+#sidebar { 
+    width: 300px; 
+    background: #1a1a1a; 
+    color: white; 
+    padding: 20px; 
+    box-shadow: 2px 0 5px rgba(0,0,0,0.5);
+    z-index: 10;
+}
+#map { flex-grow: 1; }
+h2 { color: #00d1b2; margin-top: 0; }
+input[type="file"] { margin-bottom: 20px; width: 100%; color: #ccc; }
+#layer-manager { background: #2a2a2a; padding: 10px; border-radius: 5px; }

@@ -2,70 +2,64 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler Pro</title>
+    <title>TopoProfiler Expert - Style IGN</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        body { margin: 0; display: flex; height: 100vh; background: #1a1a1a; font-family: 'Segoe UI', sans-serif; color: white; overflow: hidden; }
-        #sidebar { width: 320px; padding: 20px; background: #222; z-index: 1000; box-shadow: 2px 0 10px rgba(0,0,0,0.5); }
-        #map { flex-grow: 1; background: #000; }
+        :root { --primary: #00d1b2; --bg: #1a1a1a; --panel: #252525; }
+        body { margin: 0; display: flex; height: 100vh; background: var(--bg); font-family: 'Segoe UI', sans-serif; color: white; }
         
-        /* Fenêtre surgissante pour le profil */
+        #sidebar { width: 350px; padding: 20px; background: var(--panel); z-index: 1000; box-shadow: 5px 0 15px rgba(0,0,0,0.3); overflow-y: auto; }
+        #map { flex-grow: 1; }
+
+        /* Gestionnaire de couches style IGN */
+        .layer-group { background: #333; margin-bottom: 10px; border-radius: 4px; padding: 10px; border-left: 4px solid var(--primary); }
+        .layer-group h4 { margin: 0 0 10px 0; font-size: 0.9em; text-transform: uppercase; color: #888; }
+        .layer-item { display: flex; justify-content: space-between; font-size: 0.85em; margin-bottom: 5px; background: #444; padding: 5px; border-radius: 3px; }
+
         #profile-popup {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-            width: 800px; max-width: 90%; height: 450px;
-            background: white; color: black; border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-            display: none; flex-direction: column; z-index: 3000; padding: 20px;
+            width: 900px; height: 500px; background: white; color: black; border-radius: 8px;
+            display: none; flex-direction: column; z-index: 3000; padding: 20px; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
         }
-        #profile-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
-        #close-profile { cursor: pointer; font-size: 24px; font-weight: bold; color: #e74c3c; border: none; background: none; }
-        
-        .btn { width: 100%; padding: 12px; margin: 8px 0; cursor: pointer; border: none; border-radius: 6px; font-weight: bold; transition: 0.2s; }
-        #btn-draw { background: #f1c40f; color: #1a1a1a; font-size: 1.1em; }
-        #btn-draw:hover { background: #d4ac0d; }
-        .import-label { display: block; background: #34495e; color: white; padding: 8px; text-align: center; border-radius: 4px; font-size: 0.85em; cursor: pointer; margin-top: 5px; }
-        
-        h2 { color: #00d1b2; margin-top: 0; }
-        .file-section { background: #2d2d2d; padding: 10px; border-radius: 6px; margin-bottom: 15px; }
+        .btn { width: 100%; padding: 10px; margin: 5px 0; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
+        .btn-main { background: var(--primary); color: black; }
+        .btn-draw { background: #f1c40f; color: black; margin-top: 15px; }
     </style>
 </head>
 <body>
 
 <div id="sidebar">
-    <h2>TopoProfiler</h2>
+    <h2 style="color:var(--primary)">TopoProfiler</h2>
     
-    <div class="file-section">
-        <strong>1. Importation des données</strong>
-        <label class="import-label">📁 Choisir un Dossier Complet
-            <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
-        </label>
-        <label class="import-label">📄 Choisir Fichiers Séparés
-            <input type="file" id="file-input" multiple accept=".tif,.tiff,.las,.laz" style="display:none">
-        </label>
+    <div class="layer-group">
+        <h4>Importation</h4>
+        <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
+        <button class="btn btn-main" onclick="document.getElementById('folder-input').click()">📁 Importer Dossier (MNT/LAS)</button>
     </div>
-    
-    <button id="btn-draw" class="btn">📏 Tracer le Profil</button>
-    <button id="btn-clear" class="btn" style="background:#e74c3c; color:white;">🗑️ Effacer la carte</button>
 
-    <div style="margin-top:20px;">
-        <strong>Fichiers actifs :</strong>
-        <ul id="file-list" style="font-size:0.8em; color:#00d1b2; padding-left:15px; max-height: 200px; overflow-y: auto;"></ul>
+    <div class="layer-group">
+        <h4>Couches de Terrain (MNT)</h4>
+        <div id="list-mnt"></div>
     </div>
+
+    <div class="layer-group">
+        <h4>Nuages de Points (LAS)</h4>
+        <div id="list-las"></div>
+    </div>
+
+    <button id="btn-draw" class="btn btn-draw">📏 TRACER PROFIL EN LONG</button>
+    <button class="btn" style="background:#e74c3c; color:white;" onclick="location.reload()">🔄 Réinitialiser</button>
 </div>
 
 <div id="map"></div>
 
 <div id="profile-popup">
-    <div id="profile-header">
-        <h3 style="margin:0">Profil Altimétrique du terrain</h3>
-        <div>
-            <button id="btn-export" style="background:#3498db; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">💾 PNG</button>
-            <button id="close-profile">×</button>
-        </div>
+    <div style="display:flex; justify-content:space-between;">
+        <h3 id="profile-title">Profil Altimétrique Multi-couches</h3>
+        <button onclick="document.getElementById('profile-popup').style.display='none'" style="border:none; background:none; font-size:20px; cursor:pointer;">&times;</button>
     </div>
-    <div style="flex-grow:1; position: relative;">
-        <canvas id="profileChart"></canvas>
-    </div>
+    <div style="flex-grow:1"><canvas id="profileChart"></canvas></div>
+    <button id="btn-export" class="btn btn-main" style="width:150px; align-self:flex-end;">💾 PNG</button>
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

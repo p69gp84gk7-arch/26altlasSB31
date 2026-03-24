@@ -1,4 +1,6 @@
-// --- 1. CONFIGURATION ---
+// ==========================================
+// 1. CONFIGURATION
+// ==========================================
 proj4.defs("EPSG:2154","+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +units=m +no_defs");
 
 const map = L.map('map', { doubleClickZoom: false }).setView([42.7905, 0.5912], 14);
@@ -13,30 +15,24 @@ let chartInstance = null;
 let cursorMarker = null;
 
 // ==========================================
-// 2. GESTION DES FICHIERS MNT
+// 2. IMPORTATION MNT
 // ==========================================
 document.getElementById('file-input').onchange = async (e) => {
     for (const file of e.target.files) {
         if (!file.name.match(/\.(tif|tiff)$/i)) continue;
         
-        try {
-            const buffer = await file.arrayBuffer();
-            const tiff = await GeoTIFF.fromArrayBuffer(buffer);
-            const image = await tiff.getImage();
-            const bbox = image.getBoundingBox();
-            const raster = await image.readRasters();
-            
-            const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
-            const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
-            const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { color: "#00d1b2", weight: 2, fillOpacity: 0.15 }).addTo(map);
+        const buffer = await file.arrayBuffer();
+        const tiff = await GeoTIFF.fromArrayBuffer(buffer);
+        const image = await tiff.getImage();
+        const bbox = image.getBoundingBox();
+        const raster = await image.readRasters();
+        
+        const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
+        const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
+        const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { color: "#00d1b2", weight: 2, fillOpacity: 0.15 }).addTo(map);
 
-            const id = Date.now() + Math.random();
-            mntStore.push({ id, name: file.name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true });
-            
-            map.fitBounds(visual.getBounds());
-        } catch(err) {
-            console.error("Erreur lecture:", err);
-        }
+        mntStore.push({ id: Date.now()+Math.random(), name: file.name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true });
+        map.fitBounds(visual.getBounds());
     }
     updateMntUI();
 };
@@ -78,13 +74,13 @@ function getZ(l93) {
             const px = Math.floor(((l93[0] - m.bbox[0]) / (m.bbox[2] - m.bbox[0])) * m.width);
             const py = Math.floor(((m.bbox[3] - l93[1]) / (m.bbox[3] - m.bbox[1])) * m.height);
             const val = m.data[py * m.width + px];
-            if (val !== undefined && val > -1000) return val;
+            if (val > -1000) return val;
         }
     } return null;
 }
 
 // ==========================================
-// 3. OUTILS DE TRACÉ (FIX ROBUSTE)
+// 3. OUTILS DE TRACÉ
 // ==========================================
 window.startTool = (tool) => {
     currentTool = tool;
@@ -95,73 +91,65 @@ window.startTool = (tool) => {
     document.getElementById('btn-' + tool).classList.add('active');
 };
 
-let lastClickTime = 0; // Sécurité contre les bugs de double-clic
-
 map.on('click', (e) => {
     if (!currentTool) return;
     
-    const now = Date.now();
-    // Détection "maison" du double clic (moins de 300 millisecondes entre 2 clics)
-    if (now - lastClickTime < 300 && currentTool !== 'profile') {
-        if (currentPoints.length > 1) {
-            finalizeDraw();
-        }
-        return;
-    }
-    lastClickTime = now;
-
     currentPoints.push(e.latlng);
+    
     if (tempLayer) map.removeLayer(tempLayer);
     
     const color = currentTool === 'area' ? '#e67e22' : (currentTool === 'profile' ? '#f1c40f' : '#3498db');
-    
     if (currentTool === 'area') {
         tempLayer = L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map);
     } else {
         tempLayer = L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
     }
 
-    // Le profil s'arrête strictement à 2 points
     if (currentTool === 'profile' && currentPoints.length === 2) {
-        setTimeout(finalizeDraw, 50);
+        finalizeDraw();
+    }
+});
+
+map.on('dblclick', () => {
+    if (currentTool && currentTool !== 'profile') {
+        // Le double-clic génère un clic en trop, on le retire
+        currentPoints.pop(); 
+        if (currentPoints.length > 1) finalizeDraw();
     }
 });
 
 function finalizeDraw() {
-    try {
-        const type = currentTool;
-        const color = type === 'area' ? '#e67e22' : (type === 'profile' ? '#f1c40f' : '#3498db');
-        
-        const layer = type === 'area' 
-            ? L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map) 
-            : L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
+    const type = currentTool;
+    const color = type === 'area' ? '#e67e22' : (type === 'profile' ? '#f1c40f' : '#3498db');
+    
+    const layer = type === 'area' 
+        ? L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map) 
+        : L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
 
-        if (tempLayer) map.removeLayer(tempLayer);
-        tempLayer = null;
+    if (tempLayer) map.removeLayer(tempLayer);
+    tempLayer = null;
 
-        const drawObj = { 
-            id: Date.now(), type, layer, 
-            ptsGPS: [...currentPoints], 
-            visible: true, color, 
-            editGroup: L.layerGroup().addTo(map) 
-        };
-        
-        drawStore.push(drawObj);
-        recalculateStats(drawObj);
-        makeEditable(drawObj);
-        
-        if (type === 'profile') generateProfile(drawObj);
-        
-        currentTool = null;
-        currentPoints = [];
-        document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
-    } catch (e) {
-        console.error("Erreur de finalisation du tracé :", e);
-    }
+    const drawObj = { 
+        id: Date.now(), type, layer, 
+        ptsGPS: [...currentPoints], 
+        visible: true, color, 
+        editGroup: L.layerGroup().addTo(map),
+        statsHtml: ""
+    };
+    
+    drawStore.push(drawObj);
+    recalculateStats(drawObj);
+    makeEditable(drawObj);
+    
+    if (type === 'profile') generateProfile(drawObj);
+    
+    currentTool = null;
+    currentPoints = [];
+    document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
 }
 
 // ==========================================
-// 4. CALCULS ET AFFICHAGE DANS LE BANDEAU
+// 4. CALCULS ET ÉDITION (LIVE)
 // ==========================================
 function recalculateStats(d) {
     const l93 = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
@@ -176,8 +164,8 @@ function recalculateStats(d) {
         const dz = Math.abs(z2 - z1);
         const pente = dist > 0 ? (dz / dist * 100).toFixed(1) : 0;
         
-        d.statsHtml = `L: <b>${dist.toFixed(2)} m</b> | Pente: <b>${pente}%</b><br>ΔZ: <b>${dz.toFixed(2)} m</b>`;
         d.totalDist = dist;
+        d.statsHtml = `L: <b>${dist.toFixed(2)} m</b> | Pente: <b>${pente}%</b><br>ΔZ: <b>${dz.toFixed(2)} m</b>`;
     } else if (d.type === 'area') {
         let area = 0;
         for (let i = 0; i < l93.length; i++) {
@@ -186,14 +174,18 @@ function recalculateStats(d) {
         }
         d.statsHtml = `Surface: <b>${(Math.abs(area)/2).toFixed(2)} m²</b>`;
     }
-    updateDrawUI();
+    
+    // Mise à jour de l'affichage HTML ciblé (pour ne pas casser l'édition)
+    const statsDiv = document.getElementById(`stats-${d.id}`);
+    if (statsDiv) statsDiv.innerHTML = d.statsHtml;
+    else updateDrawUI(); // Premier rendu
 }
 
 function updateDrawUI() {
     const list = document.getElementById('measure-list');
     list.innerHTML = '';
     drawStore.forEach(d => {
-        const title = d.type === 'profile' ? 'PROFIL' : (d.type === 'line' ? 'LONGUEUR & PENTE' : 'SURFACE');
+        const title = d.type === 'profile' ? 'PROFIL' : (d.type === 'line' ? 'LIGNE' : 'SURFACE');
         list.innerHTML += `
         <div class="card" style="border-left-color: ${d.color}">
             <div class="card-header">
@@ -204,20 +196,17 @@ function updateDrawUI() {
                 </div>
                 <button class="btn-del" onclick="deleteDraw(${d.id})">✕</button>
             </div>
-            <div style="margin-top:5px; font-size:1.1em;">${d.statsHtml}</div>
-            ${d.type === 'profile' ? `<button onclick="generateProfileById(${d.id})" style="width:100%; margin-top:8px; font-size:0.8em; cursor:pointer; background:#333; color:white; border:1px solid #555; padding:5px; border-radius:3px;">Revoir le profil</button>` : ''}
+            <div id="stats-${d.id}" style="margin-top:5px; font-size:1.1em;">${d.statsHtml}</div>
+            ${d.type === 'profile' ? `<button onclick="generateProfileById(${d.id})" style="width:100%; margin-top:8px; font-size:0.8em; cursor:pointer; background:#333; color:white; border:1px solid #555; padding:5px; border-radius:3px;">Afficher le profil</button>` : ''}
         </div>`;
     });
 }
 
-// ==========================================
-// 5. ÉDITION DES POINTS (LIVE UPDATE)
-// ==========================================
 function makeEditable(d) {
     d.editGroup.clearLayers();
     if (!d.visible) return;
 
-    const icon = L.divIcon({ className: 'edit-handle', iconSize: [14, 14] });
+    const icon = L.divIcon({ className: 'edit-handle', iconSize: [12, 12] });
 
     d.ptsGPS.forEach((pt, idx) => {
         const marker = L.marker(pt, { icon, draggable: true }).addTo(d.editGroup);
@@ -225,8 +214,8 @@ function makeEditable(d) {
         marker.on('drag', (e) => {
             d.ptsGPS[idx] = e.latlng;
             d.layer.setLatLngs(d.ptsGPS);
-            recalculateStats(d); // Mise à jour live du menu à droite
-            if (d.type === 'profile') generateProfile(d); // Mise à jour live du graphique en bas
+            recalculateStats(d);
+            if (d.type === 'profile') generateProfile(d);
         });
     });
 }
@@ -247,7 +236,6 @@ window.changeColor = (id, color) => {
     const d = drawStore.find(x => x.id === id);
     d.color = color;
     d.layer.setStyle({ color: color });
-    updateDrawUI();
 };
 
 window.deleteDraw = (id) => {
@@ -260,7 +248,7 @@ window.deleteDraw = (id) => {
 };
 
 // ==========================================
-// 6. PROFIL ALTIMÉTRIQUE & CURSEUR
+// 5. PROFIL ALTIMÉTRIQUE (AXE X EN MÈTRES)
 // ==========================================
 window.generateProfileById = (id) => {
     const d = drawStore.find(x => x.id === id);
@@ -282,7 +270,9 @@ function generateProfile(d) {
         const y = l93Pts[0][1] + (l93Pts[1][1] - l93Pts[0][1]) * t;
         const z = getZ([x, y]) || 0;
         
-        chartData.push({ x: (t * d.totalDist).toFixed(1), y: z });
+        // Axe X en vrais mètres (Float)
+        const currentDist = t * d.totalDist;
+        chartData.push({ x: parseFloat(currentDist.toFixed(2)), y: parseFloat(z.toFixed(2)) });
         geoRef.push(proj4("EPSG:2154", "EPSG:4326", [x, y]));
     }
 
@@ -291,17 +281,24 @@ function generateProfile(d) {
     chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-            datasets: [{ label: 'Altitude Z (m)', data: chartData, borderColor: '#f1c40f', backgroundColor: 'rgba(241, 196, 15, 0.2)', fill: true, pointRadius: 0 }]
+            datasets: [{ label: 'Altitude (m)', data: chartData, borderColor: '#f1c40f', backgroundColor: 'rgba(241, 196, 15, 0.2)', fill: true, pointRadius: 0, tension: 0.1 }]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
-            scales: { x: { type: 'linear' } },
+            scales: { 
+                x: { 
+                    type: 'linear', 
+                    title: { display: true, text: 'Distance (m)' },
+                    ticks: { callback: function(val) { return val.toFixed(0) + 'm'; } }
+                },
+                y: { title: { display: true, text: 'Z (m)' } }
+            },
             onHover: (event, elements) => {
                 if (elements.length > 0) {
                     const idx = elements[0].index;
                     const pos = geoRef[idx];
-                    if (!cursorMarker) cursorMarker = L.circleMarker([pos[1], pos[0]], { radius: 7, color: 'red', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
+                    if (!cursorMarker) cursorMarker = L.circleMarker([pos[1], pos[0]], { radius: 6, color: 'red', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
                     else cursorMarker.setLatLng([pos[1], pos[0]]);
                 }
             }
@@ -314,7 +311,7 @@ function generateProfile(d) {
 }
 
 // ==========================================
-// 7. COORDONNÉES SOURIS (BAS DROITE)
+// 6. SUIVI SOURIS COORDONNÉES
 // ==========================================
 map.on('mousemove', (e) => {
     const l93 = proj4("EPSG:4326", "EPSG:2154", [e.latlng.lng, e.latlng.lat]);

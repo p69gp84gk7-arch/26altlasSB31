@@ -1,4 +1,3 @@
-// --- CONFIGURATION ---
 proj4.defs("EPSG:2154","+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +units=m +no_defs");
 
 const map = L.map('map', { doubleClickZoom: false }).setView([42.7905, 0.5912], 14);
@@ -7,7 +6,8 @@ L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/
 let mntStore = [];
 let drawStore = [];
 let currentPoints = [];
-let tempLine = null;
+let tempLayer = null;
+let currentTool = null;
 let chartInstance = null;
 let cursorMarker = null;
 
@@ -17,21 +17,17 @@ let cursorMarker = null;
 document.getElementById('file-input').onchange = async (e) => {
     for (const file of e.target.files) {
         if (!file.name.match(/\.(tif|tiff)$/i)) continue;
-        
         const buffer = await file.arrayBuffer();
         const tiff = await GeoTIFF.fromArrayBuffer(buffer);
         const image = await tiff.getImage();
-        const bbox = image.getBoundingBox();
         const raster = await image.readRasters();
         
-        // Affichage du rectangle sur la carte
+        const bbox = image.getBoundingBox();
         const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
         const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
         const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { color: "#00d1b2", weight: 2, fillOpacity: 0.15 }).addTo(map);
 
-        const id = Date.now() + Math.random();
-        mntStore.push({ id, name: file.name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true });
-        
+        mntStore.push({ id: Date.now()+Math.random(), name: file.name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true });
         map.fitBounds(visual.getBounds());
     }
     updateMntUI();
@@ -67,7 +63,6 @@ window.deleteMNT = (id) => {
     updateMntUI();
 };
 
-// --- EXTRACTION ALTITUDE ---
 function getZ(l93) {
     for (let m of mntStore) {
         if (!m.visible) continue;
@@ -81,77 +76,151 @@ function getZ(l93) {
 }
 
 // ==========================================
-// 2. OUTIL DE TRACÉ (2 POINTS STRICTS)
+// 2. OUTILS DE TRACÉ
 // ==========================================
-window.startLineTool = () => {
+window.startTool = (tool) => {
+    currentTool = tool;
     currentPoints = [];
-    if (tempLine) map.removeLayer(tempLine);
+    if (tempLayer) map.removeLayer(tempLayer);
     
+    // UI Boutons
+    document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+    document.getElementById('btn-' + tool).classList.add('active');
+
     map.off('click').on('click', (e) => {
         currentPoints.push(e.latlng);
+        if (tempLayer) map.removeLayer(tempLayer);
         
-        if (tempLine) map.removeLayer(tempLine);
-        tempLine = L.polyline(currentPoints, { color: '#f1c40f', weight: 5 }).addTo(map);
-
-        // Si 2 points atteints, on finalise
-        if (currentPoints.length === 2) {
-            map.off('click');
-            saveAndCalculateDraw();
+        let color = tool === 'area' ? '#e67e22' : (tool === 'profile' ? '#f1c40f' : '#3498db');
+        
+        if (tool === 'area') {
+            tempLayer = L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map);
+        } else {
+            tempLayer = L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
         }
+
+        // Profil = 2 points stricts
+        if (tool === 'profile' && currentPoints.length === 2) finalizeDraw();
     });
 };
 
-function saveAndCalculateDraw() {
-    const id = Date.now();
-    const l93Pts = currentPoints.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
-    
-    // Calculs : Longueur, Pente, Delta Z
-    const dist = Math.sqrt(Math.pow(l93Pts[1][0]-l93Pts[0][0], 2) + Math.pow(l93Pts[1][1]-l93Pts[0][1], 2));
-    const z1 = getZ(l93Pts[0]) || 0;
-    const z2 = getZ(l93Pts[1]) || 0;
-    const dz = Math.abs(z2 - z1);
-    const pente = dist > 0 ? (dz / dist * 100).toFixed(1) : 0;
+map.on('dblclick', () => {
+    if (currentTool && currentTool !== 'profile' && currentPoints.length > 1) {
+        currentPoints.pop(); // Retire le 2eme clic du double-clic
+        finalizeDraw();
+    }
+});
 
-    const finalLine = L.polyline(currentPoints, { color: '#f1c40f', weight: 5 }).addTo(map);
-    map.removeLayer(tempLine);
-    tempLine = null;
-
-    drawStore.push({ id, layer: finalLine, ptsGPS: [...currentPoints], ptsL93: l93Pts, dist, dz, pente, visible: true, color: '#f1c40f' });
+function finalizeDraw() {
+    map.off('click');
+    document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
     
-    updateDrawUI();
-    generateProfile(l93Pts, dist);
+    const type = currentTool;
+    const color = type === 'area' ? '#e67e22' : (type === 'profile' ? '#f1c40f' : '#3498db');
+    
+    const layer = type === 'area' 
+        ? L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map) 
+        : L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
+
+    if (tempLayer) map.removeLayer(tempLayer);
+    tempLayer = null;
+
+    const drawObj = { 
+        id: Date.now(), type, layer, 
+        ptsGPS: [...currentPoints], 
+        visible: true, color, 
+        editGroup: L.layerGroup().addTo(map) 
+    };
+    
+    drawStore.push(drawObj);
+    recalculateStats(drawObj);
+    makeEditable(drawObj);
+    
+    if (type === 'profile') generateProfile(drawObj);
+    currentTool = null;
 }
 
 // ==========================================
-// 3. GESTION DES TRACÉS (Droite)
+// 3. CALCULS ET UI DE DROITE
 // ==========================================
+function recalculateStats(d) {
+    const l93 = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
+    
+    if (d.type === 'profile' || d.type === 'line') {
+        let dist = 0;
+        for (let i = 1; i < l93.length; i++) {
+            dist += Math.sqrt(Math.pow(l93[i][0]-l93[i-1][0], 2) + Math.pow(l93[i][1]-l93[i-1][1], 2));
+        }
+        const z1 = getZ(l93[0]) || 0;
+        const z2 = getZ(l93[l93.length-1]) || 0;
+        const dz = Math.abs(z2 - z1);
+        const pente = dist > 0 ? (dz / dist * 100).toFixed(1) : 0;
+        
+        d.statsHtml = `L: <b>${dist.toFixed(2)} m</b> | Pente: <b>${pente}%</b><br>ΔZ: <b>${dz.toFixed(2)} m</b>`;
+        d.totalDist = dist;
+    } else if (d.type === 'area') {
+        let area = 0;
+        for (let i = 0; i < l93.length; i++) {
+            let j = (i+1) % l93.length;
+            area += l93[i][0]*l93[j][1] - l93[j][0]*l93[i][1];
+        }
+        d.statsHtml = `Surface: <b>${(Math.abs(area)/2).toFixed(2)} m²</b>`;
+    }
+    updateDrawUI();
+}
+
 function updateDrawUI() {
     const list = document.getElementById('measure-list');
     list.innerHTML = '';
     drawStore.forEach(d => {
+        const title = d.type === 'profile' ? 'PROFIL' : (d.type === 'line' ? 'LIGNE' : 'SURFACE');
         list.innerHTML += `
         <div class="card" style="border-left-color: ${d.color}">
             <div class="card-header">
                 <div>
                     <input type="checkbox" ${d.visible ? 'checked' : ''} onchange="toggleDraw(${d.id})">
                     <input type="color" class="color-picker" value="${d.color}" onchange="changeColor(${d.id}, this.value)">
-                    <strong>Ligne</strong>
+                    <strong>${title}</strong>
                 </div>
                 <button class="btn-del" onclick="deleteDraw(${d.id})">✕</button>
             </div>
-            <div>
-                L: <b>${d.dist.toFixed(2)} m</b> | Pente: <b>${d.pente}%</b><br>
-                ΔZ: <b>${d.dz.toFixed(2)} m</b>
-            </div>
-            <button onclick="generateProfileById(${d.id})" style="width:100%; margin-top:5px; font-size:0.8em; cursor:pointer;">Revoir le profil</button>
+            <div>${d.statsHtml}</div>
+            ${d.type === 'profile' ? `<button onclick="generateProfileById(${d.id})" style="width:100%; margin-top:5px; font-size:0.8em;">Voir Profil</button>` : ''}
         </div>`;
+    });
+}
+
+// ==========================================
+// 4. ÉDITION DES POINTS (DRAG & DROP)
+// ==========================================
+function makeEditable(d) {
+    d.editGroup.clearLayers();
+    if (!d.visible) return;
+
+    const icon = L.divIcon({ className: 'edit-handle', iconSize: [12, 12] });
+
+    d.ptsGPS.forEach((pt, idx) => {
+        const marker = L.marker(pt, { icon, draggable: true }).addTo(d.editGroup);
+        
+        marker.on('drag', (e) => {
+            d.ptsGPS[idx] = e.latlng;
+            d.layer.setLatLngs(d.ptsGPS);
+            recalculateStats(d);
+            if (d.type === 'profile') generateProfile(d); // Mise à jour live du graphique
+        });
     });
 }
 
 window.toggleDraw = (id) => {
     const d = drawStore.find(x => x.id === id);
     d.visible = !d.visible;
-    if (d.visible) d.layer.addTo(map); else map.removeLayer(d.layer);
+    if (d.visible) {
+        d.layer.addTo(map);
+        makeEditable(d); // Remet les points d'édition
+    } else {
+        map.removeLayer(d.layer);
+        d.editGroup.clearLayers(); // Cache les points d'édition
+    }
 };
 
 window.changeColor = (id, color) => {
@@ -164,23 +233,25 @@ window.changeColor = (id, color) => {
 window.deleteDraw = (id) => {
     const d = drawStore.find(x => x.id === id);
     map.removeLayer(d.layer);
+    map.removeLayer(d.editGroup);
     drawStore = drawStore.filter(x => x.id !== id);
     updateDrawUI();
     document.getElementById('profile-window').style.display = 'none';
 };
 
+// ==========================================
+// 5. PROFIL ALTIMÉTRIQUE ET CURSEUR
+// ==========================================
 window.generateProfileById = (id) => {
     const d = drawStore.find(x => x.id === id);
-    generateProfile(d.ptsL93, d.dist);
+    generateProfile(d);
 };
 
-// ==========================================
-// 4. PROFIL ALTIMÉTRIQUE & CURSEUR
-// ==========================================
-function generateProfile(l93Pts, totalDist) {
+function generateProfile(d) {
     document.getElementById('profile-window').style.display = 'block';
     const ctx = document.getElementById('profileChart').getContext('2d');
     
+    const l93Pts = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
     let chartData = [];
     let geoRef = [];
     const pointsCount = 100;
@@ -188,10 +259,10 @@ function generateProfile(l93Pts, totalDist) {
     for (let i = 0; i <= pointsCount; i++) {
         const t = i / pointsCount;
         const x = l93Pts[0][0] + (l93Pts[1][0] - l93Pts[0][0]) * t;
-        const y = l93Pts[0][1] + (l93Pts[1][1] - l93Pts[0][1]) * t;
+        const y = l93Pts[0][1] + (l93[1][1] - l93Pts[0][1]) * t;
         const z = getZ([x, y]) || 0;
         
-        chartData.push({ x: (t * totalDist).toFixed(1), y: z });
+        chartData.push({ x: (t * d.totalDist).toFixed(1), y: z });
         geoRef.push(proj4("EPSG:2154", "EPSG:4326", [x, y]));
     }
 
@@ -200,7 +271,7 @@ function generateProfile(l93Pts, totalDist) {
     chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-            datasets: [{ label: 'Altitude Z (m)', data: chartData, borderColor: '#3498db', backgroundColor: 'rgba(52, 152, 219, 0.2)', fill: true, pointRadius: 0 }]
+            datasets: [{ label: 'Altitude Z (m)', data: chartData, borderColor: '#f1c40f', backgroundColor: 'rgba(241, 196, 15, 0.2)', fill: true, pointRadius: 0 }]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
@@ -210,7 +281,6 @@ function generateProfile(l93Pts, totalDist) {
                 if (elements.length > 0) {
                     const idx = elements[0].index;
                     const pos = geoRef[idx];
-                    // Affichage du point rouge sur la carte
                     if (!cursorMarker) cursorMarker = L.circleMarker([pos[1], pos[0]], { radius: 6, color: 'red', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
                     else cursorMarker.setLatLng([pos[1], pos[0]]);
                 }
@@ -218,14 +288,13 @@ function generateProfile(l93Pts, totalDist) {
         }
     });
 
-    // Cacher le curseur rouge quand la souris quitte le graphique
     document.getElementById('profileChart').onmouseleave = () => {
         if (cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; }
     };
 }
 
 // ==========================================
-// 5. SUIVI SOURIS (COORDONNÉES)
+// 6. SUIVI SOURIS COORDONNÉES
 // ==========================================
 map.on('mousemove', (e) => {
     const l93 = proj4("EPSG:4326", "EPSG:2154", [e.latlng.lng, e.latlng.lat]);

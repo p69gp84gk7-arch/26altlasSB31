@@ -2,57 +2,30 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TopoProfiler Pro - MNT & LAS</title>
-    
-    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
-    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+    <title>TopoProfiler AIO</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
-<div id="ui-container">
     <div id="sidebar">
         <h2>TopoProfiler</h2>
-        <p class="subtitle">Analyse altimétrique</p>
-        <hr>
-        
-        <div class="section">
-            <label for="file-input" class="btn btn-import">📁 Charger Dossier MNT/LAS</label>
-            <input type="file" id="file-input" webkitdirectory directory multiple>
+        <input type="file" id="file-input" webkitdirectory directory multiple>
+        <div id="controls">
+            <button id="btn-measure">📏 Mesure & Profil</button>
+            <button id="btn-clear">🗑️ Effacer</button>
+            <button id="btn-export" style="display:none;">💾 Export PNG</button>
         </div>
-
-        <div class="section">
-            <button id="btn-draw" class="btn btn-draw">📏 Tracer Profil en Long</button>
-            <button id="btn-clear" class="btn btn-clear">🗑️ Effacer</button>
-        </div>
-
-        <div id="layer-manager" class="section">
-            <h4>Fonds de carte</h4>
-            <label><input type="radio" name="bg" value="sat" checked> Satellite</label><br>
-            <label><input type="radio" name="bg" value="topo"> Topographie</label>
-        </div>
-        
-        <div class="section">
-            <h4>Données</h4>
+        <div id="layer-status">
+            <h4>Couches actives :</h4>
             <ul id="file-list"></ul>
         </div>
-
-        <button id="btn-export" class="btn btn-export" style="display:none;">💾 Export Profil PNG</button>
     </div>
-    
-    <div id="main-view">
-        <div id="map"></div>
-        <div id="profile-container">
-            <canvas id="profileChart"></canvas>
-        </div>
-    </div>
-</div>
-
-<script src="main.js"></script>
+    <div id="map"></div>
+    <div id="profile-window"><canvas id="profileChart"></canvas></div>
+    <script src="main.js"></script>
 </body>
 </html>

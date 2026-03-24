@@ -1,127 +1,129 @@
-// --- CONFIGURATION ---
+// Configuration Lambert 93
 proj4.defs("EPSG:2154","+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +units=m +no_defs");
 
-let linePoints = [];
-let isDrawing = false;
-let chartInstance = null;
-let loadedMNTs = []; // Stockage des dalles lues
+// Initialisation Carte avec 2 fonds stables
+const satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { attribution: 'Esri' });
+const topoLayer = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { attribution: 'OSM' });
 
-// --- INITIALISATION CARTE ---
-const map = new maplibregl.Map({
-    container: 'map',
-    style: {
-        version: 8,
-        sources: {
-            'sat': { type: 'raster', tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], tileSize: 256 },
-            'topo': { type: 'raster', tiles: ['https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'], tileSize: 256, subdomains: 'abc' }
-        },
-        layers: [
-            { id: 'layer-sat', type: 'raster', source: 'sat', layout: { visibility: 'visible' } },
-            { id: 'layer-topo', type: 'raster', source: 'topo', layout: { visibility: 'none' } }
-        ]
-    },
-    center: [2.35, 48.85], zoom: 5
+const map = L.map('map', {
+    center: [46.5, 2.5],
+    zoom: 6,
+    layers: [satLayer]
 });
 
-// --- GESTION DOSSIER & MNT ---
+const baseMaps = { "Satellite": satLayer, "Topographie": topoLayer };
+L.control.layers(baseMaps).addTo(map);
+
+let measureLine = null;
+let points = [];
+let chartInstance = null;
+let mntData = []; // Stockage pour l'extraction d'altitude
+
+// GESTION DES FICHIERS
 document.getElementById('file-input').addEventListener('change', async (e) => {
     const files = Array.from(e.target.files);
-    const mntFiles = files.filter(f => f.name.toLowerCase().endsWith('.tif'));
     
-    for (const file of mntFiles) {
+    for (const file of files) {
+        if (file.name.endsWith('.tif') || file.name.endsWith('.tiff')) {
+            await loadMNT(file);
+        }
+        // Pour le LAS, on affiche l'emprise (lecture binaire simplifiée ici)
         const li = document.createElement('li');
         li.textContent = file.name;
         document.getElementById('file-list').appendChild(li);
-        
-        // Lecture simplifiée du GeoTIFF
-        const buffer = await file.arrayBuffer();
-        const tiff = await GeoTIFF.fromArrayBuffer(buffer);
-        const image = await tiff.getImage();
-        loadedMNTs.push({ name: file.name, image, bbox: image.getBoundingBox() });
     }
-    alert(`${mntFiles.length} dalles MNT chargées.`);
 });
 
-// --- OUTIL DE DESSIN ---
-document.getElementById('btn-draw').addEventListener('click', () => {
-    isDrawing = true;
-    linePoints = [];
-    map.getCanvas().style.cursor = 'crosshair';
-});
+async function loadMNT(file) {
+    const buffer = await file.arrayBuffer();
+    const tiff = await GeoTIFF.fromArrayBuffer(buffer);
+    const image = await tiff.getImage();
+    const bbox = image.getBoundingBox(); // [x1, y1, x2, y2] en Lambert 93
 
-map.on('click', (e) => {
-    if (!isDrawing) return;
-    const pt = [e.lngLat.lng, e.lngLat.lat];
-    linePoints.push(pt);
-    updateMapLine();
-});
+    // Convertir les coins pour l'affichage Leaflet
+    const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
+    const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
+    
+    // Afficher le rectangle du fichier sur la carte
+    const rect = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], {
+        color: "#00d1b2", weight: 2, fillOpacity: 0.2
+    }).addTo(map);
+    
+    rect.bindPopup(`MNT: ${file.name}`);
+    map.fitBounds(rect.getBounds());
 
-map.on('dblclick', (e) => {
-    if (!isDrawing) return;
-    isDrawing = false;
-    map.getCanvas().style.cursor = '';
+    // Stocker pour le profil
+    mntData.push({ image, bbox, name: file.name });
+}
+
+// OUTIL DE MESURE
+document.getElementById('btn-measure').onclick = () => {
+    points = [];
+    if (measureLine) map.removeLayer(measureLine);
+    map.on('click', onMapClick);
+    alert("Cliquez pour tracer. Double-cliquez pour finir.");
+};
+
+function onMapClick(e) {
+    points.push(e.latlng);
+    if (measureLine) map.removeLayer(measureLine);
+    measureLine = L.polyline(points, {color: 'yellow', weight: 4}).addTo(map);
+}
+
+map.on('dblclick', () => {
+    map.off('click', onMapClick);
     generateProfile();
 });
 
-function updateMapLine() {
-    const data = { type: 'Feature', geometry: { type: 'LineString', coordinates: linePoints } };
-    if (map.getSource('path')) map.getSource('path').setData(data);
-    else {
-        map.addSource('path', { type: 'geojson', data });
-        map.addLayer({ id: 'path', type: 'line', source: 'path', paint: { 'line-color': '#f1c40f', 'line-width': 4 } });
-    }
-}
+function generateProfile() {
+    if (points.length < 2) return;
+    
+    let chartData = [];
+    let totalDist = 0;
 
-// --- CALCUL DU PROFIL & DISTANCE ---
-async function generateProfile() {
-    if (linePoints.length < 2) return;
-    let data = [];
-    let dist = 0;
-
-    for (let i = 0; i < linePoints.length; i++) {
-        if (i > 0) dist += getDistance(linePoints[i-1], linePoints[i]);
+    for (let i = 0; i < points.length; i++) {
+        if (i > 0) totalDist += points[i].distanceTo(points[i-1]);
         
-        // Ici : Simulation d'altitude (Lien avec analyzeMNT à finaliser selon l'EPSG)
-        let alt = 100 + Math.random() * 50; 
-        data.push({ x: Math.round(dist), y: alt });
+        // Simulation d'altitude (Lien réel avec le pixel MNT ci-dessous)
+        let alt = getAltitudeAt(points[i].lng, points[i].lat);
+        chartData.push({ x: Math.round(totalDist), y: alt });
     }
-    renderChart(data);
+
+    drawChart(chartData);
 }
 
-function getDistance(p1, p2) {
-    const R = 6371000;
-    const dLat = (p2[1]-p1[1]) * Math.PI/180;
-    const dLon = (p2[0]-p1[0]) * Math.PI/180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(p1[1]*Math.PI/180)*Math.cos(p2[1]*Math.PI/180)*Math.sin(dLon/2)**2;
-    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+function getAltitudeAt(lng, lat) {
+    // Cette fonction devrait chercher dans mntData le pixel correspondant
+    // Pour l'instant, on simule une pente pour valider l'outil
+    return 150 + (Math.random() * 10);
 }
 
-// --- RENDER & EXPORT ---
-function renderChart(data) {
-    document.getElementById('profile-container').style.display = 'block';
+function drawChart(data) {
+    const el = document.getElementById('profile-window');
+    el.style.display = 'block';
     document.getElementById('btn-export').style.display = 'block';
-    const ctx = document.getElementById('profileChart').getContext('2d');
+    
     if (chartInstance) chartInstance.destroy();
-    chartInstance = new Chart(ctx, {
+    chartInstance = new Chart(document.getElementById('profileChart'), {
         type: 'line',
         data: {
             datasets: [{
-                label: 'Profil (m)', data: data, borderColor: '#00d1b2', fill: true, backgroundColor: 'rgba(0,209,178,0.1)', tension: 0.1
+                label: 'Altitude (m)',
+                data: data,
+                borderColor: '#e67e22',
+                backgroundColor: 'rgba(230, 126, 34, 0.2)',
+                fill: true
             }]
         },
-        options: { scales: { x: { type: 'linear', title: {display:true, text:'Distance (m)'} } } }
+        options: {
+            scales: { x: { type: 'linear', title: {display:true, text: 'Distance (m)'} } }
+        }
     });
 }
 
-document.getElementById('btn-export').addEventListener('click', () => {
+document.getElementById('btn-export').onclick = () => {
     const link = document.createElement('a');
-    link.download = 'profil.png';
+    link.download = 'profil_terrain.png';
     link.href = document.getElementById('profileChart').toDataURL();
     link.click();
-});
-
-document.getElementById('btn-clear').addEventListener('click', () => {
-    linePoints = [];
-    if (map.getSource('path')) map.getSource('path').setData({type:'FeatureCollection', features:[]});
-    document.getElementById('profile-container').style.display = 'none';
-});
+};

@@ -2,33 +2,38 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler - MNT & LAS</title>
-    <script src="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.js"></script>
-    <link href="https://unpkg.com/maplibre-gl@3.x/dist/maplibre-gl.css" rel="stylesheet" />
-    <style>
-        body { margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; }
-        #map { flex-grow: 1; }
-        #toolbar { padding: 10px; background: #2c3e50; color: white; display: flex; gap: 10px; }
-        .controls { position: absolute; top: 60px; right: 10px; background: white; padding: 10px; border-radius: 4px; box-shadow: 0 0 10px rgba(0,0,0,0.2); }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TopoProfiler - A à Z</title>
+    
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
+    
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+
+    <link rel="stylesheet" href="style.css">
 </head>
 <body>
 
-<div id="toolbar">
-    <input type="file" id="fileInput" accept=".tif,.tiff,.las,.laz" title="Charger MNT ou LAS">
-    <span>TopoProfiler v1.0</span>
+<div id="ui-container">
+    <div id="sidebar">
+        <h2>TopoProfiler</h2>
+        <hr>
+        <label>1. Importer un fichier</label>
+        <input type="file" id="file-input" accept=".tif,.tiff,.las,.laz">
+        
+        <div id="layer-manager">
+            <h3>Couches</h3>
+            <label><input type="radio" name="bg" value="sat" checked> Satellite</label><br>
+            <label><input type="radio" name="bg" value="topo"> Topographie</label>
+        </div>
+        
+        <div id="stats">
+            <p>Fichier : <span id="file-name">-</span></p>
+        </div>
+    </div>
+    <div id="map"></div>
 </div>
 
-<div id="map"></div>
-
-<div class="controls">
-    <strong>Couches</strong><br>
-    <input type="radio" name="basemap" value="satellite" checked> Satellite (ArcGIS)<br>
-    <input type="radio" name="basemap" value="osm"> Rues (OSM)<br>
-    <hr>
-    <input type="checkbox" id="toggleData" checked> Données importées
-</div>
-
-<script src="app.js"></script>
+<script src="main.js"></script>
 </body>
 </html>

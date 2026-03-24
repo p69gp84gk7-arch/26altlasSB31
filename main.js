@@ -97,21 +97,26 @@ function getZ(l93) {
 }
 
 // ==========================================
-// 3. OUTILS DE TRACÉ SÉCURISÉS
+// 3. OUTILS DE TRACÉ (AVEC BOUTON MOBILE)
 // ==========================================
 window.startTool = (tool) => {
     currentTool = tool;
     currentPoints = [];
     if (tempLayer) map.removeLayer(tempLayer);
     
+    // Gérer l'apparence des boutons
     document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
-    document.getElementById('btn-' + tool).classList.add('active');
+    const activeBtn = document.getElementById('btn-' + tool);
+    activeBtn.classList.add('active');
 
-    // LA CORRECTION EST ICI : On affiche le bouton rouge
+    // Déplacer dynamiquement le bouton rouge sous l'outil actif !
+    const finishBtn = document.getElementById('btn-finish');
+    activeBtn.insertAdjacentElement('afterend', finishBtn);
+
     if (tool === 'line' || tool === 'area') {
-        document.getElementById('btn-finish').style.display = 'block';
+        finishBtn.style.display = 'block';
     } else {
-        document.getElementById('btn-finish').style.display = 'none';
+        finishBtn.style.display = 'none';
     }
 };
 
@@ -134,7 +139,6 @@ map.on('click', (e) => {
     }
 });
 
-// Le bouton appelle cette fonction
 window.finalizeDraw = () => {
     if (!currentTool || currentPoints.length < 2) {
         alert("Veuillez placer au moins 2 points sur la carte.");
@@ -169,7 +173,7 @@ window.finalizeDraw = () => {
         currentPoints = [];
         document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
         
-        // LA CORRECTION EST ICI : On cache le bouton rouge une fois fini
+        // Cacher le bouton rouge une fois le tracé terminé
         document.getElementById('btn-finish').style.display = 'none';
         
     } catch (e) {
@@ -258,6 +262,7 @@ window.toggleDraw = (id) => {
 window.changeColor = (id, color) => {
     const d = drawStore.find(x => x.id === id);
     d.color = color; d.layer.setStyle({ color: color });
+    updateDrawUI();
 };
 
 window.deleteDraw = (id) => {

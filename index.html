@@ -2,51 +2,76 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler - Version Stable</title>
+    <title>TopoProfiler Pro</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
     <style>
-        body { margin: 0; display: flex; height: 100vh; background: #1a1a1a; font-family: sans-serif; color: white; }
-        #sidebar { width: 300px; padding: 20px; background: #222; z-index: 1000; box-shadow: 2px 0 5px rgba(0,0,0,0.5); }
+        body { margin: 0; display: flex; height: 100vh; background: #1a1a1a; font-family: 'Segoe UI', sans-serif; color: white; overflow: hidden; }
+        #sidebar { width: 320px; padding: 20px; background: #222; z-index: 1000; box-shadow: 2px 0 10px rgba(0,0,0,0.5); }
         #map { flex-grow: 1; background: #000; }
-        #profile-container { 
-            position: absolute; bottom: 10px; left: 310px; right: 10px; 
-            height: 220px; background: white; display: none; border-radius: 5px; padding: 10px; z-index: 2000;
+        
+        /* Fenêtre surgissante pour le profil */
+        #profile-popup {
+            position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+            width: 800px; max-width: 90%; height: 450px;
+            background: white; color: black; border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            display: none; flex-direction: column; z-index: 3000; padding: 20px;
         }
-        .btn { width: 100%; padding: 10px; margin: 5px 0; cursor: pointer; border: none; border-radius: 4px; font-weight: bold; }
-        #btn-draw { background: #f1c40f; color: black; }
-        input[type="file"] { margin: 10px 0; font-size: 0.8em; }
+        #profile-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 10px; }
+        #close-profile { cursor: pointer; font-size: 24px; font-weight: bold; color: #e74c3c; border: none; background: none; }
+        
+        .btn { width: 100%; padding: 12px; margin: 8px 0; cursor: pointer; border: none; border-radius: 6px; font-weight: bold; transition: 0.2s; }
+        #btn-draw { background: #f1c40f; color: #1a1a1a; font-size: 1.1em; }
+        #btn-draw:hover { background: #d4ac0d; }
+        .import-label { display: block; background: #34495e; color: white; padding: 8px; text-align: center; border-radius: 4px; font-size: 0.85em; cursor: pointer; margin-top: 5px; }
+        
         h2 { color: #00d1b2; margin-top: 0; }
+        .file-section { background: #2d2d2d; padding: 10px; border-radius: 6px; margin-bottom: 15px; }
     </style>
 </head>
 <body>
 
 <div id="sidebar">
     <h2>TopoProfiler</h2>
-    <p style="font-size: 0.8em; color: #888;">1. Charger dossier MNT/LAS<br>2. Cliquer sur "Tracer"<br>3. Double-clic pour finir</p>
     
-    <input type="file" id="file-input" webkitdirectory directory multiple>
+    <div class="file-section">
+        <strong>1. Importation des données</strong>
+        <label class="import-label">📁 Choisir un Dossier Complet
+            <input type="file" id="folder-input" webkitdirectory directory multiple style="display:none">
+        </label>
+        <label class="import-label">📄 Choisir Fichiers Séparés
+            <input type="file" id="file-input" multiple accept=".tif,.tiff,.las,.laz" style="display:none">
+        </label>
+    </div>
     
-    <button id="btn-draw" class="btn">📏 Tracer Profil</button>
-    <button id="btn-export" class="btn" style="background:#3498db; color:white; display:none;">💾 Export PNG</button>
-    
-    <div id="layers-list" style="margin-top:20px; font-size:0.8em;">
-        <strong>Dalles chargées :</strong>
-        <ul id="file-names" style="color:#00d1b2; padding-left:15px;"></ul>
+    <button id="btn-draw" class="btn">📏 Tracer le Profil</button>
+    <button id="btn-clear" class="btn" style="background:#e74c3c; color:white;">🗑️ Effacer la carte</button>
+
+    <div style="margin-top:20px;">
+        <strong>Fichiers actifs :</strong>
+        <ul id="file-list" style="font-size:0.8em; color:#00d1b2; padding-left:15px; max-height: 200px; overflow-y: auto;"></ul>
     </div>
 </div>
 
 <div id="map"></div>
 
-<div id="profile-container">
-    <canvas id="profileChart"></canvas>
+<div id="profile-popup">
+    <div id="profile-header">
+        <h3 style="margin:0">Profil Altimétrique du terrain</h3>
+        <div>
+            <button id="btn-export" style="background:#3498db; color:white; border:none; padding:5px 15px; border-radius:4px; cursor:pointer;">💾 PNG</button>
+            <button id="close-profile">×</button>
+        </div>
+    </div>
+    <div style="flex-grow:1; position: relative;">
+        <canvas id="profileChart"></canvas>
+    </div>
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script src="main.js"></script>
 </body>
 </html>

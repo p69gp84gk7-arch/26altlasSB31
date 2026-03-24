@@ -2,76 +2,98 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler v6 - Bagnères-de-Luchon</title>
+    <title>TopoProfiler Expert - Luchon</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        :root { --accent: #00d1b2; --panel: #252525; }
-        body { margin: 0; display: flex; height: 100vh; background: #1a1a1a; color: white; font-family: sans-serif; overflow: hidden; }
+        :root { --accent: #00d1b2; --panel: #222; --bg: #111; }
+        body { margin: 0; display: flex; height: 100vh; background: var(--bg); color: white; font-family: 'Segoe UI', sans-serif; overflow: hidden; }
         
-        #sidebar-left { width: 260px; padding: 15px; background: var(--panel); border-right: 1px solid #444; }
-        #map { flex-grow: 1; position: relative; }
-        #sidebar-right { width: 300px; padding: 15px; background: var(--panel); border-left: 1px solid #444; overflow-y: auto; }
+        /* Layout 3 colonnes */
+        #left-panel { width: 280px; background: var(--panel); padding: 15px; border-right: 1px solid #444; display: flex; flex-direction: column; }
+        #map { flex-grow: 1; position: relative; background: #000; cursor: crosshair; }
+        #right-panel { width: 320px; background: var(--panel); padding: 15px; border-left: 1px solid #444; display: flex; flex-direction: column; overflow-y: auto; }
 
-        .section-title { color: var(--accent); font-size: 0.8em; font-weight: bold; margin: 15px 0 10px 0; border-bottom: 1px solid #444; }
-        .tool-btn { width: 100%; padding: 10px; margin: 4px 0; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; text-align: left; }
-        .tool-btn:hover { border-color: var(--accent); }
-        .tool-btn.active { background: var(--accent); color: black; font-weight: bold; }
+        h2 { color: var(--accent); margin: 0 0 5px 0; font-size: 1.5em; }
+        .section { margin-top: 20px; border-top: 1px solid #444; padding-top: 15px; }
+        .title { font-size: 0.8em; text-transform: uppercase; color: #888; margin-bottom: 10px; font-weight: bold; }
 
-        #profile-window { 
-            position: absolute; bottom: 10px; left: 275px; right: 315px; 
-            height: 240px; background: white; border-radius: 8px; padding: 10px; z-index: 2000; 
-            display: none; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); 
+        /* Boutons Outils */
+        .btn { width: 100%; padding: 10px; margin-bottom: 8px; background: #333; color: white; border: 1px solid #555; border-radius: 4px; cursor: pointer; text-align: left; transition: 0.2s; }
+        .btn:hover { background: #444; border-color: var(--accent); }
+        .btn.active { background: var(--accent); color: black; font-weight: bold; border-color: var(--accent); }
+
+        /* Cartes de gestion (Layers et Mesures) */
+        .card { background: #1a1a1a; padding: 10px; border-radius: 4px; margin-bottom: 8px; border-left: 3px solid var(--accent); position: relative; font-size: 0.85em; line-height: 1.4; }
+        .btn-del { position: absolute; top: 5px; right: 5px; color: #ff4757; background: none; border: none; cursor: pointer; font-size: 1.2em; }
+
+        /* Coordonnées */
+        .coords { background: #000; padding: 12px; border-radius: 4px; font-family: monospace; font-size: 0.9em; margin-top: auto; border: 1px solid #333; }
+        .z-val { color: var(--accent); font-size: 1.2em; font-weight: bold; }
+
+        /* Fenêtre Profil */
+        #profile-window {
+            position: absolute; bottom: 20px; left: 300px; right: 340px; height: 250px;
+            background: white; border-radius: 8px; padding: 15px; z-index: 2000;
+            display: none; box-shadow: 0 0 20px rgba(0,0,0,0.5); border: 2px solid var(--accent);
         }
 
-        .layer-item, .measure-card { background: #111; padding: 8px; margin-bottom: 8px; border-radius: 4px; border-left: 3px solid var(--accent); position: relative; font-size: 0.85em; }
-        .btn-del { position: absolute; top: 5px; right: 5px; color: #ff4757; background: none; border: none; cursor: pointer; }
+        /* Marqueurs d'édition Leaflet */
+        .edit-marker { background: white; border: 2px solid #e74c3c; width: 10px; height: 10px; border-radius: 2px; cursor: move; }
         
-        .coords-box { background: #000; padding: 10px; border-radius: 4px; font-family: monospace; font-size: 0.85em; margin-top: 20px; }
-        .export-group { display: flex; gap: 5px; margin-top: 10px; }
-        .btn-exp { flex: 1; padding: 5px; font-size: 0.75em; background: #3498db; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        #loading { color: #f1c40f; font-size: 0.8em; display: none; margin-top: 5px; }
     </style>
 </head>
 <body>
 
-    <div id="sidebar-left">
-        <h3 style="color:var(--accent)">TopoProfiler</h3>
-        <div class="section-title">Importation MNT</div>
-        <input type="file" id="file-input" webkitdirectory directory multiple style="width:100%; font-size:0.8em;">
-        <p style="font-size:0.7em; color:#777;">Sélectionnez un fichier ou un dossier complet.</p>
-        
-        <div class="section-title">Gestion des MNT</div>
-        <div id="layer-manager"></div>
+    <div id="left-panel">
+        <h2>TopoProfiler</h2>
+        <p style="font-size: 0.75em; color: #aaa; margin-top:0;">Bagnères-de-Luchon</p>
+
+        <div class="section">
+            <div class="title">Importer MNT (.tif)</div>
+            <input type="file" id="file-input" multiple style="font-size: 0.8em; width: 100%; margin-bottom: 5px;">
+            <input type="file" id="folder-input" webkitdirectory directory multiple style="font-size: 0.8em; width: 100%;">
+            <div id="loading">⏳ Chargement et analyse du fichier...</div>
+        </div>
+
+        <div class="section" style="flex-grow: 1; overflow-y: auto;">
+            <div class="title">Dalles chargées</div>
+            <div id="layer-list"></div>
+        </div>
     </div>
 
     <div id="map"></div>
 
-    <div id="sidebar-right">
-        <div class="section-title">Outils</div>
-        <button id="btn-line" class="tool-btn" onclick="setMode('line')">📏 Ligne (2 pts) + Pente</button>
-        <button id="btn-mline" class="tool-btn" onclick="setMode('mline')">👣 Multi-points + Profil</button>
-        <button id="btn-area" class="tool-btn" onclick="setMode('area')">📐 Surface (m²)</button>
-        
-        <div class="section-title">Mesures en mémoire</div>
-        <div id="measure-list"></div>
-
-        <div class="section-title">Export global</div>
-        <div class="export-group">
-            <button class="btn-exp" onclick="window.print()">Imprimer Vue</button>
-            <button class="btn-exp" onclick="exportAllCSV()">Données CSV</button>
+    <div id="right-panel">
+        <div class="section" style="margin-top:0; border-top:none;">
+            <div class="title">Outils de tracé</div>
+            <button id="btn-line" class="btn" onclick="startTool('line')">📏 Ligne 2 pts (Pente)</button>
+            <button id="btn-mline" class="btn" onclick="startTool('mline')">📈 Multi-points (Profil)</button>
+            <button id="btn-area" class="btn" onclick="startTool('area')">📐 Polygone (Surface)</button>
+            <p style="font-size: 0.75em; color: #888;">Double-cliquez pour terminer un tracé.</p>
         </div>
 
-        <div class="coords-box">
-            X: <span id="cur-x">0.00</span> | Y: <span id="cur-y">0.00</span><br>
-            Z: <span id="cur-z" style="color:var(--accent); font-weight:bold;">0.00</span> m
+        <div class="section" style="flex-grow: 1; overflow-y: auto;">
+            <div class="title">Résultats (Éditables)</div>
+            <div id="measure-list"></div>
+        </div>
+
+        <div class="coords">
+            X : <span id="cur-x">0.00</span><br>
+            Y : <span id="cur-y">0.00</span><br>
+            Z : <span id="cur-z" class="z-val">0.00</span> m
         </div>
     </div>
 
     <div id="profile-window">
-        <div style="display:flex; justify-content:space-between; color:black; margin-bottom:5px; align-items:center;">
-            <strong>Profil du terrain</strong>
-            <button onclick="document.getElementById('profile-window').style.display='none'" style="background:#eee; border:1px solid #ccc; cursor:pointer;">Fermer</button>
+        <div style="display: flex; justify-content: space-between; color: black; margin-bottom: 10px; align-items: center;">
+            <strong style="font-size: 1.1em;">Profil Altimétrique (Z)</strong>
+            <div>
+                <button onclick="exportChart()" style="background:#3498db; color:white; border:none; padding:5px 10px; border-radius:3px; cursor:pointer; margin-right:10px;">Export PNG</button>
+                <button onclick="document.getElementById('profile-window').style.display='none'" style="background:#e74c3c; color:white; border:none; padding:5px 10px; border-radius:3px; cursor:pointer;">Fermer</button>
+            </div>
         </div>
-        <div style="height:190px;"><canvas id="profileChart"></canvas></div>
+        <div style="height: 180px;"><canvas id="profileChart"></canvas></div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

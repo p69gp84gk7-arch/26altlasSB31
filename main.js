@@ -344,15 +344,29 @@ window.exportChartPNG = () => {
 };
 
 window.exportChartCSV = () => {
-    let csv = "Distance(m),Altitude(m),Latitude,Longitude,X(L93),Y(L93)\n";
+    // 1. En-têtes de colonnes (avec \ufeff pour forcer l'UTF-8 sur Excel)
+    let csv = "\ufeffDistance (m);Altitude Z (m);Latitude (GPS);Longitude (GPS);X (Lambert 93);Y (Lambert 93)\n";
+    
+    // 2. Remplissage avec les données en mémoire
     currentProfileExportData.forEach(row => {
-        csv += `${row.dist},${row.z},${row.lat},${row.lng},${row.x},${row.y}\n`;
+        // On remplace le point anglais par la virgule française pour que Excel reconnaisse les nombres
+        let dist = row.dist.replace('.', ',');
+        let z = row.z.replace('.', ',');
+        let lat = row.lat.replace('.', ',');
+        let lng = row.lng.replace('.', ',');
+        let x = row.x.replace('.', ',');
+        let y = row.y.replace('.', ',');
+        
+        // On sépare chaque valeur par un point-virgule
+        csv += `${dist};${z};${lat};${lng};${x};${y}\n`;
     });
-    const blob = new Blob([csv], { type: 'text/csv' });
+    
+    // 3. Création et téléchargement du fichier
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'donnees_profil_topo.csv';
+    a.download = 'export_profil_altimetrique.csv';
     a.click();
 };
 

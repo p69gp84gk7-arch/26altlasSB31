@@ -13,6 +13,7 @@ let tempLayer = null;
 let currentTool = null;
 let chartInstance = null;
 let cursorMarker = null;
+let currentProfileExportData = []; // Stockage pour le CSV
 
 // ==========================================
 // 2. IMPORTATION MNT
@@ -67,20 +68,38 @@ window.deleteMNT = (id) => {
     updateMntUI();
 };
 
+// --- CALCUL Z : INTERPOLATION BILINÉAIRE POUR PRÉCISION MAXIMALE ---
 function getZ(l93) {
     for (let m of mntStore) {
         if (!m.visible) continue;
         if (l93[0] >= m.bbox[0] && l93[0] <= m.bbox[2] && l93[1] >= m.bbox[1] && l93[1] <= m.bbox[3]) {
-            const px = Math.floor(((l93[0] - m.bbox[0]) / (m.bbox[2] - m.bbox[0])) * m.width);
-            const py = Math.floor(((m.bbox[3] - l93[1]) / (m.bbox[3] - m.bbox[1])) * m.height);
-            const val = m.data[py * m.width + px];
-            if (val > -1000) return val;
+            // Position flottante exacte dans le fichier
+            const px = ((l93[0] - m.bbox[0]) / (m.bbox[2] - m.bbox[0])) * m.width;
+            const py = ((m.bbox[3] - l93[1]) / (m.bbox[3] - m.bbox[1])) * m.height;
+            
+            // Les 4 pixels autour de notre point pour lisser la donnée
+            const x1 = Math.floor(px), x2 = Math.min(x1 + 1, m.width - 1);
+            const y1 = Math.floor(py), y2 = Math.min(y1 + 1, m.height - 1);
+
+            const dx = px - x1;
+            const dy = py - y1;
+
+            const q11 = m.data[y1 * m.width + x1] || 0;
+            const q21 = m.data[y1 * m.width + x2] || 0;
+            const q12 = m.data[y2 * m.width + x1] || 0;
+            const q22 = m.data[y2 * m.width + x2] || 0;
+
+            if (q11 < -500) return null; // Filtre NoData de l'IGN
+
+            // Formule mathématique d'interpolation bilinéaire
+            const val = (1-dx)*(1-dy)*q11 + dx*(1-dy)*q21 + (1-dx)*dy*q12 + dx*dy*q22;
+            return val;
         }
     } return null;
 }
 
 // ==========================================
-// 3. OUTILS DE TRACÉ
+// 3. OUTILS DE TRACÉ SÉCURISÉS (BOUTON MANUEL)
 // ==========================================
 window.startTool = (tool) => {
     currentTool = tool;
@@ -89,6 +108,9 @@ window.startTool = (tool) => {
     
     document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
     document.getElementById('btn-' + tool).classList.add('active');
+    
+    // Fait apparaître le bouton TERMINER LE TRACÉ
+    document.getElementById('btn-finish').style.display = 'block';
 };
 
 map.on('click', (e) => {
@@ -105,20 +127,15 @@ map.on('click', (e) => {
         tempLayer = L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
     }
 
+    // Si Profil, on s'arrête strictement à 2 clics
     if (currentTool === 'profile' && currentPoints.length === 2) {
         finalizeDraw();
     }
 });
 
-map.on('dblclick', () => {
-    if (currentTool && currentTool !== 'profile') {
-        // Le double-clic génère un clic en trop, on le retire
-        currentPoints.pop(); 
-        if (currentPoints.length > 1) finalizeDraw();
-    }
-});
-
-function finalizeDraw() {
+window.finalizeDraw = () => {
+    if (!currentTool || currentPoints.length < 2) return;
+    
     const type = currentTool;
     const color = type === 'area' ? '#e67e22' : (type === 'profile' ? '#f1c40f' : '#3498db');
     
@@ -143,9 +160,11 @@ function finalizeDraw() {
     
     if (type === 'profile') generateProfile(drawObj);
     
+    // Réinitialisation de l'outil
     currentTool = null;
     currentPoints = [];
     document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+    document.getElementById('btn-finish').style.display = 'none'; // Cache le bouton
 }
 
 // ==========================================
@@ -175,17 +194,16 @@ function recalculateStats(d) {
         d.statsHtml = `Surface: <b>${(Math.abs(area)/2).toFixed(2)} m²</b>`;
     }
     
-    // Mise à jour de l'affichage HTML ciblé (pour ne pas casser l'édition)
     const statsDiv = document.getElementById(`stats-${d.id}`);
     if (statsDiv) statsDiv.innerHTML = d.statsHtml;
-    else updateDrawUI(); // Premier rendu
+    else updateDrawUI();
 }
 
 function updateDrawUI() {
     const list = document.getElementById('measure-list');
     list.innerHTML = '';
     drawStore.forEach(d => {
-        const title = d.type === 'profile' ? 'PROFIL' : (d.type === 'line' ? 'LIGNE' : 'SURFACE');
+        const title = d.type === 'profile' ? 'PROFIL' : (d.type === 'line' ? 'LIGNE / PENTE' : 'SURFACE');
         list.innerHTML += `
         <div class="card" style="border-left-color: ${d.color}">
             <div class="card-header">
@@ -223,32 +241,26 @@ function makeEditable(d) {
 window.toggleDraw = (id) => {
     const d = drawStore.find(x => x.id === id);
     d.visible = !d.visible;
-    if (d.visible) {
-        d.layer.addTo(map);
-        makeEditable(d);
-    } else {
-        map.removeLayer(d.layer);
-        d.editGroup.clearLayers();
-    }
+    if (d.visible) { d.layer.addTo(map); makeEditable(d); } 
+    else { map.removeLayer(d.layer); d.editGroup.clearLayers(); }
 };
 
 window.changeColor = (id, color) => {
     const d = drawStore.find(x => x.id === id);
-    d.color = color;
-    d.layer.setStyle({ color: color });
+    d.color = color; d.layer.setStyle({ color: color });
+    updateDrawUI();
 };
 
 window.deleteDraw = (id) => {
     const d = drawStore.find(x => x.id === id);
-    map.removeLayer(d.layer);
-    map.removeLayer(d.editGroup);
+    map.removeLayer(d.layer); map.removeLayer(d.editGroup);
     drawStore = drawStore.filter(x => x.id !== id);
     updateDrawUI();
     document.getElementById('profile-window').style.display = 'none';
 };
 
 // ==========================================
-// 5. PROFIL ALTIMÉTRIQUE (AXE X EN MÈTRES)
+// 5. PROFIL ALTIMÉTRIQUE & EXPORTS
 // ==========================================
 window.generateProfileById = (id) => {
     const d = drawStore.find(x => x.id === id);
@@ -262,6 +274,7 @@ function generateProfile(d) {
     const l93Pts = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
     let chartData = [];
     let geoRef = [];
+    currentProfileExportData = []; // Reset des données d'export
     const pointsCount = 100;
 
     for (let i = 0; i <= pointsCount; i++) {
@@ -270,10 +283,14 @@ function generateProfile(d) {
         const y = l93Pts[0][1] + (l93Pts[1][1] - l93Pts[0][1]) * t;
         const z = getZ([x, y]) || 0;
         
-        // Axe X en vrais mètres (Float)
         const currentDist = t * d.totalDist;
-        chartData.push({ x: parseFloat(currentDist.toFixed(2)), y: parseFloat(z.toFixed(2)) });
-        geoRef.push(proj4("EPSG:2154", "EPSG:4326", [x, y]));
+        chartData.push({ x: parseFloat(currentDist.toFixed(2)), y: parseFloat(z.toFixed(3)) }); // Précision millimétrique sur le graph
+        
+        const gps = proj4("EPSG:2154", "EPSG:4326", [x, y]);
+        geoRef.push(gps);
+        
+        // Stockage pour l'export CSV
+        currentProfileExportData.push({ dist: currentDist.toFixed(2), z: z.toFixed(3), lat: gps[1].toFixed(6), lng: gps[0].toFixed(6), x: x.toFixed(2), y: y.toFixed(2) });
     }
 
     if (chartInstance) chartInstance.destroy();
@@ -281,17 +298,13 @@ function generateProfile(d) {
     chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
-            datasets: [{ label: 'Altitude (m)', data: chartData, borderColor: '#f1c40f', backgroundColor: 'rgba(241, 196, 15, 0.2)', fill: true, pointRadius: 0, tension: 0.1 }]
+            datasets: [{ label: 'Altitude Z (m)', data: chartData, borderColor: '#f1c40f', backgroundColor: 'rgba(241, 196, 15, 0.2)', fill: true, pointRadius: 0, tension: 0.1 }]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             scales: { 
-                x: { 
-                    type: 'linear', 
-                    title: { display: true, text: 'Distance (m)' },
-                    ticks: { callback: function(val) { return val.toFixed(0) + 'm'; } }
-                },
+                x: { type: 'linear', title: { display: true, text: 'Distance (m)' } },
                 y: { title: { display: true, text: 'Z (m)' } }
             },
             onHover: (event, elements) => {
@@ -310,6 +323,28 @@ function generateProfile(d) {
     };
 }
 
+// Fonction d'Export Image
+window.exportChartPNG = () => {
+    const a = document.createElement('a');
+    a.href = document.getElementById('profileChart').toDataURL('image/png');
+    a.download = 'profil_luchon.png';
+    a.click();
+};
+
+// Fonction d'Export CSV Complet
+window.exportChartCSV = () => {
+    let csv = "Distance(m),Altitude(m),Latitude,Longitude,X(L93),Y(L93)\n";
+    currentProfileExportData.forEach(row => {
+        csv += `${row.dist},${row.z},${row.lat},${row.lng},${row.x},${row.y}\n`;
+    });
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'donnees_profil_topo.csv';
+    a.click();
+};
+
 // ==========================================
 // 6. SUIVI SOURIS COORDONNÉES
 // ==========================================
@@ -318,5 +353,5 @@ map.on('mousemove', (e) => {
     const z = getZ(l93);
     document.getElementById('cur-x').textContent = l93[0].toFixed(2);
     document.getElementById('cur-y').textContent = l93[1].toFixed(2);
-    document.getElementById('cur-z').textContent = z !== null ? z.toFixed(2) : "---";
+    document.getElementById('cur-z').textContent = z !== null ? z.toFixed(3) : "---"; // 3 chiffres après la virgule !
 });

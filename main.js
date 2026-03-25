@@ -311,6 +311,42 @@ function generateProfile(d) {
     chartInstance = new Chart(ctx, {
         type: 'line',
         data: {
+            datasets: [{ 
+                label: 'Altitude Z (m)', 
+                data: chartData, 
+                borderColor: d.color, /* <-- LA COULEUR S'ADAPTE AU TRACÉ ! */
+                backgroundColor: d.color + '33', /* <-- Ajoute 20% de transparence au remplissage */
+                fill: true, pointRadius: 0, tension: 0.1 
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            scales: { 
+                x: { type: 'linear', title: { display: true, text: 'Distance (m)' } },
+                y: { title: { display: true, text: 'Z (m)' } }
+            },
+            onHover: (event, elements) => {
+                if (elements.length > 0) {
+                    const idx = elements[0].index;
+                    const pos = geoRef[idx];
+                    if (!cursorMarker) cursorMarker = L.circleMarker([pos[1], pos[0]], { radius: 6, color: 'red', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
+                    else cursorMarker.setLatLng([pos[1], pos[0]]);
+                }
+            }
+        }
+    });
+
+    document.getElementById('profileChart').onmouseleave = () => {
+        if (cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; }
+    };
+}
+
+    if (chartInstance) chartInstance.destroy();
+    
+    chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: {
             datasets: [{ label: 'Altitude Z (m)', data: chartData, borderColor: '#f1c40f', backgroundColor: 'rgba(241, 196, 15, 0.2)', fill: true, pointRadius: 0, tension: 0.1 }]
         },
         options: {

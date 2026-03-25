@@ -2,16 +2,41 @@ body { margin: 0; display: flex; height: 100vh; background: #121212; color: whit
 #sidebar { width: 300px; padding: 15px; background: #1e1e1e; z-index: 1000; }
 #map { flex-grow: 1; height: 100%; }
 /* Fenêtre Profil Forcée */
+       /* Fenêtre Flottante & Redimensionnable */
         #profile-window {
-            position: absolute; bottom: 20px; left: 280px; right: 320px; height: 250px;
-            background: white; border-radius: 8px; padding: 15px; z-index: 2000;
-            display: none; box-shadow: 0 -5px 15px rgba(0,0,0,0.5); border: 2px solid #f1c40f;
+            position: absolute; 
+            bottom: 20px; left: 280px; /* Position de départ */
+            width: 600px; height: 250px; /* Taille de base */
+            min-width: 500px; min-height: 250px; /* Taille minimum bloquée */
+            background: white; 
+            border-radius: 8px; 
+            z-index: 3000; display: none; 
+            box-shadow: 0 5px 25px rgba(0,0,0,0.5); 
+            border: 1px solid #ccc;
             
-            /* --- NOUVEAU : Propriétés pour le redimensionnement --- */
-            resize: vertical;      /* Permet d'agrandir uniquement en hauteur */
-            overflow: hidden;      /* Obligatoire pour que "resize" fonctionne */
-            min-height: 200px;     /* Hauteur minimum pour ne pas écraser les boutons */
-            max-height: calc(100vh - 50px); /* Hauteur maximum pour ne pas dépasser l'écran */
+            /* Magie du redimensionnement et de la structure */
+            resize: both; 
+            overflow: hidden;
+            display: flex; 
+            flex-direction: column;
+        }
+
+        /* La barre de titre pour attraper la fenêtre */
+        #profile-header {
+            background: #f8f9fa;
+            padding: 8px 15px;
+            cursor: move; /* Curseur "main" pour indiquer qu'on peut glisser */
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #ddd;
+            color: #333; font-weight: bold;
+            user-select: none; /* Empêche de surligner le texte quand on glisse */
+        }
+
+        /* Le conteneur du graphique qui s'adaptera tout seul */
+        #profile-body {
+            flex-grow: 1;
+            position: relative;
+            padding: 10px;
         }
 .btn { width: 100%; margin: 5px 0; padding: 10px; cursor: pointer; border: none; border-radius: 4px; }
 #btn-measure { background: #f1c40f; color: #333; font-weight: bold; }

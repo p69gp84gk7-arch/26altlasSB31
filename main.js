@@ -28,6 +28,7 @@ L.control.layers({
     "⛰️ Topographie": topoMap
 }).addTo(map);
 
+// Variables globales
 let mntStore = [];
 let drawStore = [];
 let currentPoints = [];
@@ -119,19 +120,17 @@ function getZ(l93) {
 }
 
 // ==========================================
-// 3. OUTILS DE TRACÉ (AVEC BOUTON MOBILE)
+// 3. OUTILS DE TRACÉ SÉCURISÉS (BOUTON MOBILE)
 // ==========================================
 window.startTool = (tool) => {
     currentTool = tool;
     currentPoints = [];
     if (tempLayer) map.removeLayer(tempLayer);
     
-    // Gérer l'apparence des boutons
     document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
     const activeBtn = document.getElementById('btn-' + tool);
     activeBtn.classList.add('active');
 
-    // Déplacer dynamiquement le bouton rouge sous l'outil actif !
     const finishBtn = document.getElementById('btn-finish');
     activeBtn.insertAdjacentElement('afterend', finishBtn);
 
@@ -194,8 +193,6 @@ window.finalizeDraw = () => {
         currentTool = null;
         currentPoints = [];
         document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
-        
-        // Cacher le bouton rouge une fois le tracé terminé
         document.getElementById('btn-finish').style.display = 'none';
         
     } catch (e) {
@@ -336,8 +333,8 @@ function generateProfile(d) {
             datasets: [{ 
                 label: 'Altitude Z (m)', 
                 data: chartData, 
-                borderColor: d.color, /* La couleur s'adapte dynamiquement */
-                backgroundColor: d.color + '33', /* Fond transparent dynamique */
+                borderColor: d.color, 
+                backgroundColor: d.color + '33', 
                 fill: true, pointRadius: 0, tension: 0.1 
             }]
         },
@@ -372,23 +369,16 @@ window.exportChartPNG = () => {
 };
 
 window.exportChartCSV = () => {
-    // 1. En-têtes de colonnes (avec \ufeff pour forcer l'UTF-8 sur Excel)
     let csv = "\ufeffDistance (m);Altitude Z (m);Latitude (GPS);Longitude (GPS);X (Lambert 93);Y (Lambert 93)\n";
-    
-    // 2. Remplissage avec les données en mémoire
     currentProfileExportData.forEach(row => {
-        // On remplace le point anglais par la virgule française pour Excel
         let dist = row.dist.replace('.', ',');
         let z = row.z.replace('.', ',');
         let lat = row.lat.replace('.', ',');
         let lng = row.lng.replace('.', ',');
         let x = row.x.replace('.', ',');
         let y = row.y.replace('.', ',');
-        
         csv += `${dist};${z};${lat};${lng};${x};${y}\n`;
     });
-    
-    // 3. Création et téléchargement du fichier
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -396,8 +386,20 @@ window.exportChartCSV = () => {
     a.download = 'export_profil_altimetrique.csv';
     a.click();
 };
+
 // ==========================================
-// 8. FENÊTRE FLOTTANTE (DRAG & DROP)
+// 6. SUIVI SOURIS COORDONNÉES
+// ==========================================
+map.on('mousemove', (e) => {
+    const l93 = proj4("EPSG:4326", "EPSG:2154", [e.latlng.lng, e.latlng.lat]);
+    const z = getZ(l93);
+    document.getElementById('cur-x').textContent = l93[0].toFixed(2);
+    document.getElementById('cur-y').textContent = l93[1].toFixed(2);
+    document.getElementById('cur-z').textContent = z !== null ? z.toFixed(3) : "---";
+});
+
+// ==========================================
+// 7. FENÊTRE FLOTTANTE (DRAG & DROP)
 // ==========================================
 const profileWin = document.getElementById('profile-window');
 const profileHeader = document.getElementById('profile-header');
@@ -406,41 +408,26 @@ let isDragging = false;
 let dragOffsetX = 0;
 let dragOffsetY = 0;
 
-// Quand on clique sur la barre de titre
 profileHeader.addEventListener('mousedown', (e) => {
-    // Si on clique sur un bouton, on ne déclenche pas le glissement
     if (e.target.tagName === 'BUTTON') return;
-    
     isDragging = true;
-    
-    // On calcule l'endroit exact où on a cliqué sur la barre
     const rect = profileWin.getBoundingClientRect();
     dragOffsetX = e.clientX - rect.left;
     dragOffsetY = e.clientY - rect.top;
 });
 
-// Quand on bouge la souris sur tout l'écran
 document.addEventListener('mousemove', (e) => {
     if (!isDragging) return;
-    
-    // On calcule la nouvelle position
     let newX = e.clientX - dragOffsetX;
     let newY = e.clientY - dragOffsetY;
     
-    // Sécurité pour ne pas balancer la fenêtre hors de l'écran par le haut ou la gauche
     if (newX < 0) newX = 0;
     if (newY < 0) newY = 0;
     
-    // On libère l'ancrage "bottom" d'origine pour pouvoir bouger librement
     profileWin.style.bottom = 'auto'; 
     profileWin.style.right = 'auto';  
-    
-    // On applique les nouvelles coordonnées
     profileWin.style.left = newX + 'px';
     profileWin.style.top = newY + 'px';
 });
 
-// Quand on relâche le clic n'importe où
-document.addEventListener('mouseup', () => {
-    isDragging = false;
-});
+document.addEventListener('mouseup', () => { isDragging = false; });

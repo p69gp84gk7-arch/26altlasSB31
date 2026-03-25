@@ -336,40 +336,10 @@ function generateProfile(d) {
             datasets: [{ 
                 label: 'Altitude Z (m)', 
                 data: chartData, 
-                borderColor: d.color, /* <-- LA COULEUR S'ADAPTE AU TRACÉ ! */
-                backgroundColor: d.color + '33', /* <-- Ajoute 20% de transparence au remplissage */
+                borderColor: d.color, /* La couleur s'adapte dynamiquement */
+                backgroundColor: d.color + '33', /* Fond transparent dynamique */
                 fill: true, pointRadius: 0, tension: 0.1 
             }]
-        },
-        options: {
-            responsive: true, maintainAspectRatio: false,
-            interaction: { mode: 'index', intersect: false },
-            scales: { 
-                x: { type: 'linear', title: { display: true, text: 'Distance (m)' } },
-                y: { title: { display: true, text: 'Z (m)' } }
-            },
-            onHover: (event, elements) => {
-                if (elements.length > 0) {
-                    const idx = elements[0].index;
-                    const pos = geoRef[idx];
-                    if (!cursorMarker) cursorMarker = L.circleMarker([pos[1], pos[0]], { radius: 6, color: 'red', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
-                    else cursorMarker.setLatLng([pos[1], pos[0]]);
-                }
-            }
-        }
-    });
-
-    document.getElementById('profileChart').onmouseleave = () => {
-        if (cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; }
-    };
-}
-
-    if (chartInstance) chartInstance.destroy();
-    
-    chartInstance = new Chart(ctx, {
-        type: 'line',
-        data: {
-            datasets: [{ label: 'Altitude Z (m)', data: chartData, borderColor: '#f1c40f', backgroundColor: 'rgba(241, 196, 15, 0.2)', fill: true, pointRadius: 0, tension: 0.1 }]
         },
         options: {
             responsive: true, maintainAspectRatio: false,
@@ -407,7 +377,7 @@ window.exportChartCSV = () => {
     
     // 2. Remplissage avec les données en mémoire
     currentProfileExportData.forEach(row => {
-        // On remplace le point anglais par la virgule française pour que Excel reconnaisse les nombres
+        // On remplace le point anglais par la virgule française pour Excel
         let dist = row.dist.replace('.', ',');
         let z = row.z.replace('.', ',');
         let lat = row.lat.replace('.', ',');
@@ -415,7 +385,6 @@ window.exportChartCSV = () => {
         let x = row.x.replace('.', ',');
         let y = row.y.replace('.', ',');
         
-        // On sépare chaque valeur par un point-virgule
         csv += `${dist};${z};${lat};${lng};${x};${y}\n`;
     });
     
@@ -427,17 +396,6 @@ window.exportChartCSV = () => {
     a.download = 'export_profil_altimetrique.csv';
     a.click();
 };
-
-// ==========================================
-// 6. SUIVI SOURIS COORDONNÉES
-// ==========================================
-map.on('mousemove', (e) => {
-    const l93 = proj4("EPSG:4326", "EPSG:2154", [e.latlng.lng, e.latlng.lat]);
-    const z = getZ(l93);
-    document.getElementById('cur-x').textContent = l93[0].toFixed(2);
-    document.getElementById('cur-y').textContent = l93[1].toFixed(2);
-    document.getElementById('cur-z').textContent = z !== null ? z.toFixed(3) : "---";
-});
 // ==========================================
 // 8. FENÊTRE FLOTTANTE (DRAG & DROP)
 // ==========================================

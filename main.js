@@ -1,10 +1,32 @@
 // ==========================================
-// 1. CONFIGURATION
+// 1. CONFIGURATION ET FONDS DE CARTE
 // ==========================================
 proj4.defs("EPSG:2154","+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +units=m +no_defs");
 
 const map = L.map('map', { doubleClickZoom: false }).setView([42.7905, 0.5912], 14);
-L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 20 }).addTo(map);
+
+// Définition de 3 fonds de carte différents
+const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { 
+    maxZoom: 19, attribution: 'Esri Satellite' 
+});
+
+const planOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { 
+    maxZoom: 19, attribution: '© OpenStreetMap' 
+});
+
+const topoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', { 
+    maxZoom: 17, attribution: '© OpenTopoMap' 
+});
+
+// On met le satellite par défaut
+satellite.addTo(map);
+
+// On ajoute le menu en haut à droite pour pouvoir changer
+L.control.layers({
+    "🌍 Satellite (Esri)": satellite,
+    "🗺️ Plan (OSM)": planOSM,
+    "⛰️ Topographie": topoMap
+}).addTo(map);
 
 let mntStore = [];
 let drawStore = [];

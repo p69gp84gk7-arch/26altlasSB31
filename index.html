@@ -75,14 +75,17 @@
 
     <div id="profile-window">
         <div style="display:flex; justify-content:space-between; color:black; margin-bottom:10px; font-weight:bold; align-items:center;">
-            <span>Profil Altimétrique</span>
+            <span>Profil Altimétrique <small style="font-weight:normal; color:#888;">(Redimensionnez avec le coin en bas à droite ↘)</small></span>
             <div>
-                <button onclick="exportChartCSV()" style="background:#2ecc71; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">💾 Export CSV + GPS</button>
-                <button onclick="exportChartPNG()" style="background:#3498db; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-right: 15px;">🖼️ Export PNG</button>
+                <button onclick="exportChartCSV()" style="background:#2ecc71; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">💾 CSV</button>
+                <button onclick="exportChartPNG()" style="background:#3498db; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-right: 15px;">🖼️ PNG</button>
                 <button onclick="document.getElementById('profile-window').style.display='none'" style="cursor:pointer; background:#e74c3c; color:white; border:none; padding:5px 10px; border-radius:4px;">✕ Fermer</button>
             </div>
         </div>
-        <div style="height:170px;"><canvas id="profileChart"></canvas></div>
+        
+        <div style="position: relative; height: calc(100% - 40px); width: 100%;">
+            <canvas id="profileChart"></canvas>
+        </div>
     </div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>

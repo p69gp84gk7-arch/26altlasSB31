@@ -2,6 +2,7 @@ body { margin: 0; display: flex; height: 100vh; background: #121212; color: whit
 #sidebar { width: 300px; padding: 15px; background: #1e1e1e; z-index: 1000; }
 #map { flex-grow: 1; height: 100%; }
 /* Fenêtre Flottante & Redimensionnable */
+        /* Fenêtre Flottante & Redimensionnable */
         #profile-window {
             position: absolute; 
             bottom: 20px; left: 280px; 
@@ -13,9 +14,10 @@ body { margin: 0; display: flex; height: 100vh; background: #121212; color: whit
             box-shadow: 0 5px 25px rgba(0,0,0,0.5); 
             border: 1px solid #ccc;
             
-            /* C'est ici que la magie du redimensionnement manuel opère */
+            /* Dégage l'espace pour rendre la poignée cliquable */
             resize: both !important; 
-            overflow: hidden !important;
+            overflow: auto !important;
+            padding-bottom: 15px; 
         }
 
         /* Barre de titre (hauteur fixe stricte) */

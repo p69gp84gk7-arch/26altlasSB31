@@ -74,20 +74,19 @@
     </div>
 
    <div id="profile-window">
-        <div style="display:flex; justify-content:space-between; color:black; margin-bottom:5px; font-weight:bold; align-items:center;">
-            <span>Profil Altimétrique <small style="font-weight:normal; color:#888;">(Tirez le bord du bas pour agrandir ↕)</small></span>
+        <div id="profile-header">
+            <span>📈 Profil Altimétrique <small style="font-weight:normal; color:#888;">(Déplacez-moi !)</small></span>
             <div>
-                <button onclick="exportChartCSV()" style="background:#2ecc71; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer;">💾 CSV + GPS</button>
-                <button onclick="exportChartPNG()" style="background:#3498db; color:white; border:none; padding:5px 10px; border-radius:4px; cursor:pointer; margin-right: 15px;">🖼️ PNG</button>
-                <button onclick="document.getElementById('profile-window').style.display='none'" style="cursor:pointer; background:#e74c3c; color:white; border:none; padding:5px 10px; border-radius:4px;">✕ Fermer</button>
+                <button onclick="exportChartCSV()" style="background:#2ecc71; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size: 0.85em;">💾 CSV</button>
+                <button onclick="exportChartPNG()" style="background:#3498db; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; margin-right: 10px; font-size: 0.85em;">🖼️ PNG</button>
+                <button onclick="document.getElementById('profile-window').style.display='none'" style="cursor:pointer; background:#e74c3c; color:white; border:none; padding:4px 8px; border-radius:4px; font-size: 0.85em;">✕ Fermer</button>
             </div>
         </div>
         
-        <div style="position: relative; height: calc(100% - 40px); width: 100%;">
+        <div id="profile-body">
             <canvas id="profileChart"></canvas>
         </div>
     </div>
-
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>

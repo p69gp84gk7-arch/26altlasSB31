@@ -1,42 +1,43 @@
 body { margin: 0; display: flex; height: 100vh; background: #121212; color: white; }
 #sidebar { width: 300px; padding: 15px; background: #1e1e1e; z-index: 1000; }
 #map { flex-grow: 1; height: 100%; }
-/* Fenêtre Profil Forcée */
-       /* Fenêtre Flottante & Redimensionnable */
+/* Fenêtre Flottante & Redimensionnable */
         #profile-window {
             position: absolute; 
-            bottom: 20px; left: 280px; /* Position de départ */
-            width: 600px; height: 250px; /* Taille de base */
-            min-width: 500px; min-height: 250px; /* Taille minimum bloquée */
+            bottom: 20px; left: 280px; 
+            width: 600px; height: 250px; 
+            min-width: 500px; min-height: 250px; 
             background: white; 
             border-radius: 8px; 
             z-index: 3000; display: none; 
             box-shadow: 0 5px 25px rgba(0,0,0,0.5); 
             border: 1px solid #ccc;
             
-            /* Magie du redimensionnement et de la structure */
-            resize: both; 
-            overflow: hidden;
-            display: flex; 
-            flex-direction: column;
+            /* C'est ici que la magie du redimensionnement manuel opère */
+            resize: both !important; 
+            overflow: hidden !important;
         }
 
-        /* La barre de titre pour attraper la fenêtre */
+        /* Barre de titre (hauteur fixe stricte) */
         #profile-header {
+            height: 40px; 
+            box-sizing: border-box;
             background: #f8f9fa;
-            padding: 8px 15px;
-            cursor: move; /* Curseur "main" pour indiquer qu'on peut glisser */
+            padding: 0 15px;
+            cursor: move; 
             display: flex; justify-content: space-between; align-items: center;
             border-bottom: 1px solid #ddd;
             color: #333; font-weight: bold;
-            user-select: none; /* Empêche de surligner le texte quand on glisse */
+            user-select: none; 
         }
 
-        /* Le conteneur du graphique qui s'adaptera tout seul */
+        /* Conteneur du graphique (calcule le reste de l'espace exact) */
         #profile-body {
-            flex-grow: 1;
-            position: relative;
+            height: calc(100% - 40px); 
+            width: 100%;
+            position: relative; /* Indispensable pour dompter Chart.js */
             padding: 10px;
+            box-sizing: border-box;
         }
 .btn { width: 100%; margin: 5px 0; padding: 10px; cursor: pointer; border: none; border-radius: 4px; }
 #btn-measure { background: #f1c40f; color: #333; font-weight: bold; }

@@ -380,3 +380,51 @@ map.on('mousemove', (e) => {
     document.getElementById('cur-y').textContent = l93[1].toFixed(2);
     document.getElementById('cur-z').textContent = z !== null ? z.toFixed(3) : "---";
 });
+// ==========================================
+// 8. FENÊTRE FLOTTANTE (DRAG & DROP)
+// ==========================================
+const profileWin = document.getElementById('profile-window');
+const profileHeader = document.getElementById('profile-header');
+
+let isDragging = false;
+let dragOffsetX = 0;
+let dragOffsetY = 0;
+
+// Quand on clique sur la barre de titre
+profileHeader.addEventListener('mousedown', (e) => {
+    // Si on clique sur un bouton, on ne déclenche pas le glissement
+    if (e.target.tagName === 'BUTTON') return;
+    
+    isDragging = true;
+    
+    // On calcule l'endroit exact où on a cliqué sur la barre
+    const rect = profileWin.getBoundingClientRect();
+    dragOffsetX = e.clientX - rect.left;
+    dragOffsetY = e.clientY - rect.top;
+});
+
+// Quand on bouge la souris sur tout l'écran
+document.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    
+    // On calcule la nouvelle position
+    let newX = e.clientX - dragOffsetX;
+    let newY = e.clientY - dragOffsetY;
+    
+    // Sécurité pour ne pas balancer la fenêtre hors de l'écran par le haut ou la gauche
+    if (newX < 0) newX = 0;
+    if (newY < 0) newY = 0;
+    
+    // On libère l'ancrage "bottom" d'origine pour pouvoir bouger librement
+    profileWin.style.bottom = 'auto'; 
+    profileWin.style.right = 'auto';  
+    
+    // On applique les nouvelles coordonnées
+    profileWin.style.left = newX + 'px';
+    profileWin.style.top = newY + 'px';
+});
+
+// Quand on relâche le clic n'importe où
+document.addEventListener('mouseup', () => {
+    isDragging = false;
+});

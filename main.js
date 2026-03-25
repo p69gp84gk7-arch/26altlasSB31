@@ -388,16 +388,39 @@ window.exportChartCSV = () => {
 };
 
 // ==========================================
-// 6. SUIVI SOURIS COORDONNÉES
+// 6. SUIVI SOURIS COORDONNÉES (SÉCURISÉ)
 // ==========================================
 map.on('mousemove', (e) => {
-    const l93 = proj4("EPSG:4326", "EPSG:2154", [e.latlng.lng, e.latlng.lat]);
-    const z = getZ(l93);
-    document.getElementById('cur-x').textContent = l93[0].toFixed(2);
-    document.getElementById('cur-y').textContent = l93[1].toFixed(2);
-    document.getElementById('cur-z').textContent = z !== null ? z.toFixed(3) : "---";
+    try {
+        // Sécurité : on vérifie que la souris est bien sur la carte
+        if (!e.latlng) return;
+        
+        // 1. Conversion GPS vers Lambert 93
+        const l93 = proj4("EPSG:4326", "EPSG:2154", [e.latlng.lng, e.latlng.lat]);
+        
+        // 2. Mise à jour des textes X et Y
+        const elX = document.getElementById('cur-x');
+        const elY = document.getElementById('cur-y');
+        if (elX) elX.innerText = l93[0].toFixed(2);
+        if (elY) elY.innerText = l93[1].toFixed(2);
+        
+        // 3. Extraction et mise à jour de l'altitude Z
+        const elZ = document.getElementById('cur-z');
+        if (elZ) {
+            let z = null;
+            try { 
+                z = getZ(l93); 
+            } catch (err) { 
+                /* On ignore les erreurs de lecture MNT si on est hors zone */ 
+            }
+            
+            // Affichage avec 3 chiffres après la virgule, ou "---" si on est dans le vide
+            elZ.innerText = (z !== null && !isNaN(z)) ? z.toFixed(3) : "---";
+        }
+    } catch (error) {
+        console.warn("Erreur mineure de suivi souris ignorée :", error);
+    }
 });
-
 // ==========================================
 // 7. FENÊTRE FLOTTANTE (DRAG & DROP)
 // ==========================================

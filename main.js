@@ -12,7 +12,6 @@ const topoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', 
 satellite.addTo(map);
 L.control.layers({ "🌍 Satellite": satellite, "🗺️ Plan": planOSM, "⛰️ Topographie": topoMap }).addTo(map);
 
-// Variables globales
 let mntStore = [];
 let drawStore = [];
 let kmzStore = []; 
@@ -85,7 +84,7 @@ document.getElementById('kmz-input').onchange = (e) => {
 };
 
 window.loadGithubKMZ = () => {
-    const url = prompt("Entrez l'URL raw du fichier .kmz sur GitHub\n(ex: https://raw.githubusercontent.com/user/repo/branch/pistes.kmz)");
+    const url = prompt("Entrez l'URL raw du fichier .kmz sur GitHub\n(ex: https://raw.githubusercontent.com/...)");
     if (url) processKMZ(url, "pistes_github.kmz");
 };
 
@@ -122,7 +121,7 @@ function applyKmzStyle(id) {
 }
 
 // ==========================================
-// 4. OUTILS DE TRACÉ SÉCURISÉS
+// 4. OUTILS DE TRACÉ
 // ==========================================
 window.startTool = (tool) => {
     currentTool = tool; currentPoints = [];

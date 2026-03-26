@@ -6,11 +6,13 @@
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #00d1b2; --bg: #1a1a1a; --panel: #252525; }
+        
+        /* STRUCTURE DE BASE (Gère l'ordre Gauche / Carte / Droite) */
         body { margin: 0; display: flex; height: 100vh; background: var(--bg); color: white; font-family: sans-serif; overflow: hidden; }
         
-        #left-panel { width: 280px; background: var(--panel); padding: 15px; border-right: 1px solid #444; display: flex; flex-direction: column; overflow-y: auto; }
-        #map { flex-grow: 1; background: #000; cursor: crosshair; }
-        #right-panel { width: 300px; background: var(--panel); padding: 15px; border-left: 1px solid #444; display: flex; flex-direction: column; }
+        #left-panel { width: 280px; background: var(--panel); padding: 15px; border-right: 1px solid #444; display: flex; flex-direction: column; overflow-y: auto; z-index: 10; }
+        #map { flex-grow: 1; background: #000; cursor: crosshair; position: relative; }
+        #right-panel { width: 300px; background: var(--panel); padding: 15px; border-left: 1px solid #444; display: flex; flex-direction: column; z-index: 10; }
 
         h3 { color: var(--accent); margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px; }
         .subtitle { font-size: 0.8em; color: #888; text-transform: uppercase; margin-bottom: 10px; margin-top: 15px; font-weight: bold; }
@@ -34,10 +36,10 @@
         .coords { background: #000; padding: 10px; border-radius: 4px; font-family: monospace; margin-top: auto; border: 1px solid #333; }
         .edit-handle { background: white; border: 2px solid #e74c3c; border-radius: 50%; cursor: move; box-shadow: 0 0 3px rgba(0,0,0,0.5); }
 
-        /* Fenêtre Flottante Graphique */
+        /* FENÊTRE PROFIL FLOTTANTE */
         #profile-window {
             position: absolute; bottom: 20px; left: 300px; 
-            width: 600px; height: 300px; min-width: 450px; min-height: 250px; 
+            width: 600px; height: 320px; min-width: 450px; min-height: 250px; 
             background: white; border-radius: 8px; z-index: 3000; display: none; 
             box-shadow: 0 5px 25px rgba(0,0,0,0.5); border: 1px solid #ccc;
             resize: both !important; overflow: hidden !important; box-sizing: border-box;
@@ -47,8 +49,15 @@
             height: 40px; background: #f8f9fa; padding: 0 10px; cursor: move; 
             display: flex; justify-content: space-between; align-items: center;
             border-bottom: 1px solid #ddd; color: #333; font-weight: bold; user-select: none; 
+            border-top-left-radius: 7px; border-top-right-radius: 7px;
         }
-        #profile-body { height: calc(100% - 40px); width: 100%; position: relative; padding: 10px; box-sizing: border-box; }
+        
+        /* Barre des curseurs */
+        #profile-controls {
+            background: #f1f2f6; padding: 8px 15px; font-size: 0.8em; 
+            border-bottom: 1px solid #ddd; color: #333; display: flex; flex-direction: column; gap: 6px;
+        }
+        #profile-body { height: calc(100% - 95px); width: 100%; position: relative; padding: 10px; box-sizing: border-box; }
     </style>
 </head>
 <body>
@@ -62,16 +71,16 @@
 
         <div class="subtitle">2. Calques KMZ</div>
         <input type="file" id="kmz-input" accept=".kmz" style="font-size:0.8em; margin-bottom:5px; width:100%;">
-        <button onclick="loadGithubKMZ()" style="width:100%; padding:5px; margin-bottom:10px; font-size:0.8em; cursor:pointer; background:#333; color:white; border:1px solid #555; border-radius:3px;">🌐 Importer depuis GitHub (URL)</button>
+        <button onclick="loadGithubKMZ()" style="width:100%; padding:5px; margin-bottom:10px; font-size:0.8em; cursor:pointer; background:#333; color:white; border:1px solid #555; border-radius:3px;">🌐 Importer depuis GitHub</button>
         <div id="kmz-list"></div>
     </div>
 
     <div id="map"></div>
 
     <div id="right-panel">
-        <div class="subtitle">Outils (Clic pour placer)</div>
+        <div class="subtitle">Outils (Clic pour tracer)</div>
         
-        <button id="btn-line" class="btn-tool" onclick="startTool('line')">📈 Tracer Parcours (Profil + Pente)</button>
+        <button id="btn-line" class="btn-tool" onclick="startTool('line')">📈 Ligne (Profil + Pente)</button>
         <button id="btn-area" class="btn-tool" onclick="startTool('area')">📐 Surface (Polygone)</button>
         
         <button id="btn-finish" onclick="finalizeDraw()">✅ TERMINER LE TRACÉ</button>
@@ -82,11 +91,11 @@
         <div class="coords">
             X : <span id="cur-x">0.00</span><br>
             Y : <span id="cur-y">0.00</span><br>
-            Z : <span id="cur-z" style="color:var(--accent); font-weight:bold; font-size:1.1em;">0.000</span> m
+            Z : <span id="cur-z" style="color:var(--accent); font-weight:bold; font-size:1.1em;">---</span> m
         </div>
     </div>
 
-   <div id="profile-window">
+    <div id="profile-window">
         <div id="profile-header">
             <span>📈 Profil Altimétrique <small style="font-weight:normal; color:#888;">(Déplacez-moi !)</small></span>
             <div>
@@ -96,7 +105,7 @@
             </div>
         </div>
         
-        <div id="profile-controls" style="background: #f1f2f6; padding: 8px 15px; font-size: 0.8em; border-bottom: 1px solid #ddd; color: #333; display: flex; flex-direction: column; gap: 6px;">
+        <div id="profile-controls">
             <div style="display: flex; align-items: center; gap: 8px;">
                 <strong style="width: 50px;">Axe X :</strong>
                 <span style="font-size:0.9em; color:#666;">Min</span> <input type="range" id="x-min" oninput="updateScalesLive()" style="flex-grow: 1; cursor:pointer;">
@@ -111,11 +120,7 @@
             </div>
         </div>
 
-        <div id="profile-body" style="height: calc(100% - 95px); width: 100%; position: relative; padding: 10px; box-sizing: border-box;">
-            <canvas id="profileChart"></canvas>
-        </div>
-    </div>
-        <div id="profile-body" style="height: calc(100% - 75px); width: 100%; position: relative; padding: 10px; box-sizing: border-box;">
+        <div id="profile-body">
             <canvas id="profileChart"></canvas>
         </div>
     </div>
@@ -126,7 +131,6 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="https://unpkg.com/leaflet-kmz@latest/dist/leaflet-kmz.js"></script>
-    
     <script src="main.js"></script>
 </body>
 </html>

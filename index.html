@@ -95,7 +95,18 @@
                 <button onclick="document.getElementById('profile-window').style.display='none'" style="cursor:pointer; background:#e74c3c; color:white; border:none; padding:4px 8px; border-radius:4px; font-size: 0.85em;">✕</button>
             </div>
         </div>
-        <div id="profile-body">
+        
+        <div id="profile-controls" style="background: #f1f2f6; padding: 5px 15px; display: flex; gap: 10px; font-size: 0.85em; border-bottom: 1px solid #ddd; color: #333; align-items: center;">
+            <strong>Échelles :</strong>
+            <label>X Min: <input type="number" id="x-min" placeholder="auto" style="width: 50px; text-align: center; border: 1px solid #ccc;"></label>
+            <label>X Max: <input type="number" id="x-max" placeholder="auto" style="width: 50px; text-align: center; border: 1px solid #ccc;"></label>
+            <span style="color:#aaa;">|</span>
+            <label>Z Min: <input type="number" id="y-min" placeholder="auto" style="width: 50px; text-align: center; border: 1px solid #ccc;"></label>
+            <label>Z Max: <input type="number" id="y-max" placeholder="auto" style="width: 50px; text-align: center; border: 1px solid #ccc;"></label>
+            <button onclick="updateChartScales()" style="cursor:pointer; background:#f39c12; color:white; border:none; padding:3px 10px; border-radius:3px; margin-left: auto;">🔄 Appliquer</button>
+        </div>
+
+        <div id="profile-body" style="height: calc(100% - 75px); width: 100%; position: relative; padding: 10px; box-sizing: border-box;">
             <canvas id="profileChart"></canvas>
         </div>
     </div>

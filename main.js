@@ -227,7 +227,7 @@ function generateProfile(d) {
     }
 
     let chartData = []; let geoRef = []; currentProfileExportData = []; 
-    const samplingInterval = 10; 
+    const samplingInterval = 1; 
 
     let zStart = getZ(l93Pts[0]) || 0;
     addPointToChart(0, zStart, [l93Pts[0][0], l93Pts[0][1]]);
@@ -307,14 +307,20 @@ function generateProfile(d) {
 
 window.exportChartPNG = () => { const a = document.createElement('a'); a.href = document.getElementById('profileChart').toDataURL('image/png'); a.download = 'profil.png'; a.click(); };
 window.exportChartCSV = () => {
-    let csv = "\ufeffDistance (m);Altitude Z (m)\n";
+    // \t crée une vraie tabulation entre les colonnes
+    let csv = "\ufeffDistance (m)\tAltitude Z (m)\n";
+    
     currentProfileExportData.forEach(row => { 
-        csv += `${row.dist.replace('.', ',')};${row.z.replace('.', ',')}\n`; 
+        // On sépare la distance et l'altitude par \t
+        csv += `${row.dist.replace('.', ',')}\t${row.z.replace('.', ',')}\n`; 
     });
+    
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'export_profil_epure.csv'; a.click();
+    const a = document.createElement('a'); 
+    a.href = URL.createObjectURL(blob); 
+    a.download = 'export_profil_1m.csv'; 
+    a.click();
 };
-
 // ==========================================
 // 7. GESTION DES CURSEURS LIVE (SCALES)
 // ==========================================

@@ -83,11 +83,6 @@ document.getElementById('kmz-input').onchange = (e) => {
     if (file) { const url = URL.createObjectURL(file); processKMZ(url, file.name); }
 };
 
-window.loadGithubKMZ = () => {
-    const url = prompt("Entrez l'URL raw du fichier .kmz sur GitHub\n(ex: https://raw.githubusercontent.com/...)");
-    if (url) processKMZ(url, "pistes.kmz");
-};
-
 function processKMZ(url, name) {
     const kmzLayer = L.kmzLayer().addTo(map);
     kmzLayer.on('load', function(e) {

@@ -2,63 +2,76 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>TopoProfiler - Édition & Mesures</title>
+    <title>TopoProfiler - Édition, KMZ & Mesures</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         :root { --accent: #00d1b2; --bg: #1a1a1a; --panel: #252525; }
         body { margin: 0; display: flex; height: 100vh; background: var(--bg); color: white; font-family: sans-serif; overflow: hidden; }
         
-        #left-panel { width: 260px; background: var(--panel); padding: 15px; border-right: 1px solid #444; display: flex; flex-direction: column; }
+        #left-panel { width: 280px; background: var(--panel); padding: 15px; border-right: 1px solid #444; display: flex; flex-direction: column; overflow-y: auto; }
         #map { flex-grow: 1; background: #000; cursor: crosshair; }
         #right-panel { width: 300px; background: var(--panel); padding: 15px; border-left: 1px solid #444; display: flex; flex-direction: column; }
 
         h3 { color: var(--accent); margin-top: 0; border-bottom: 1px solid #444; padding-bottom: 10px; }
-        .subtitle { font-size: 0.8em; color: #888; text-transform: uppercase; margin-bottom: 10px; font-weight: bold; }
+        .subtitle { font-size: 0.8em; color: #888; text-transform: uppercase; margin-bottom: 10px; margin-top: 15px; font-weight: bold; }
 
         .btn-tool { width: 100%; padding: 10px; margin-bottom: 8px; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; transition: 0.2s; opacity: 0.8; }
         .btn-tool:hover { opacity: 1; }
         .btn-tool.active { box-shadow: 0 0 0 3px white; opacity: 1; }
         
-        #btn-profile { background: #f1c40f; color: black; }
         #btn-line { background: #3498db; color: white; }
         #btn-area { background: #e67e22; color: white; }
-
-        /* NOUVEAU : Bouton pour terminer le tracé sans double-clic */
         #btn-finish { display: none; background: #e74c3c; color: white; width: 100%; padding: 15px; font-size: 1.1em; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; margin-top: 10px; animation: pulse 1.5s infinite; }
+        
         @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.02); } 100% { transform: scale(1); } }
 
         .card { background: #111; padding: 10px; margin-bottom: 10px; border-radius: 4px; border-left: 4px solid var(--accent); position: relative; font-size: 0.85em; line-height: 1.4; }
         .card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
         .btn-del { color: #ff4757; background: none; border: none; cursor: pointer; font-weight: bold; font-size: 1.1em; }
         .color-picker { border: none; width: 20px; height: 20px; cursor: pointer; padding: 0; background: none; }
-
-        #profile-window {
-            position: absolute; bottom: 20px; left: 280px; right: 320px; height: 240px;
-            background: white; border-radius: 8px; padding: 15px; z-index: 2000;
-            display: none; box-shadow: 0 5px 20px rgba(0,0,0,0.5); border: 2px solid #f1c40f;
-        }
+        .slider-width { width: 60px; vertical-align: middle; }
 
         .coords { background: #000; padding: 10px; border-radius: 4px; font-family: monospace; margin-top: auto; border: 1px solid #333; }
         .edit-handle { background: white; border: 2px solid #e74c3c; border-radius: 50%; cursor: move; box-shadow: 0 0 3px rgba(0,0,0,0.5); }
+
+        /* Fenêtre Flottante Graphique */
+        #profile-window {
+            position: absolute; bottom: 20px; left: 300px; 
+            width: 600px; height: 300px; min-width: 450px; min-height: 250px; 
+            background: white; border-radius: 8px; z-index: 3000; display: none; 
+            box-shadow: 0 5px 25px rgba(0,0,0,0.5); border: 1px solid #ccc;
+            resize: both !important; overflow: hidden !important; box-sizing: border-box;
+            padding-bottom: 15px; padding-right: 15px;
+        }
+        #profile-header {
+            height: 40px; background: #f8f9fa; padding: 0 10px; cursor: move; 
+            display: flex; justify-content: space-between; align-items: center;
+            border-bottom: 1px solid #ddd; color: #333; font-weight: bold; user-select: none; 
+        }
+        #profile-body { height: calc(100% - 40px); width: 100%; position: relative; padding: 10px; box-sizing: border-box; }
     </style>
 </head>
 <body>
 
     <div id="left-panel">
         <h3>TopoProfiler</h3>
-        <div class="subtitle">1. Importer MNT (.tif)</div>
-        <input type="file" id="file-input" multiple style="font-size:0.8em; margin-bottom:20px; width:100%;">
         
-        <div class="subtitle">2. Fichiers sur la carte</div>
-        <div id="mnt-list" style="flex-grow:1; overflow-y:auto;"></div>
+        <div class="subtitle">1. Altitudes MNT (.tif)</div>
+        <input type="file" id="mnt-input" multiple style="font-size:0.8em; margin-bottom:10px; width:100%;">
+        <div id="mnt-list"></div>
+
+        <div class="subtitle">2. Calques KMZ</div>
+        <input type="file" id="kmz-input" accept=".kmz" style="font-size:0.8em; margin-bottom:5px; width:100%;">
+        <button onclick="loadGithubKMZ()" style="width:100%; padding:5px; margin-bottom:10px; font-size:0.8em; cursor:pointer; background:#333; color:white; border:1px solid #555; border-radius:3px;">🌐 Importer depuis GitHub (URL)</button>
+        <div id="kmz-list"></div>
     </div>
 
     <div id="map"></div>
 
     <div id="right-panel">
         <div class="subtitle">Outils (Clic pour placer)</div>
-        <button id="btn-profile" class="btn-tool" onclick="startTool('profile')">📈 Profil Altimétrique (2 Pts)</button>
-        <button id="btn-line" class="btn-tool" onclick="startTool('line')">📏 Longueur & Pente (Multi-pts)</button>
+        
+        <button id="btn-line" class="btn-tool" onclick="startTool('line')">📈 Tracer Parcours (Profil + Pente)</button>
         <button id="btn-area" class="btn-tool" onclick="startTool('area')">📐 Surface (Polygone)</button>
         
         <button id="btn-finish" onclick="finalizeDraw()">✅ TERMINER LE TRACÉ</button>
@@ -73,24 +86,27 @@
         </div>
     </div>
 
-<div id="profile-window">
+    <div id="profile-window">
         <div id="profile-header">
             <span>📈 Profil Altimétrique <small style="font-weight:normal; color:#888;">(Déplacez-moi !)</small></span>
             <div>
                 <button onclick="exportChartCSV()" style="background:#2ecc71; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; font-size: 0.85em;">💾 CSV</button>
                 <button onclick="exportChartPNG()" style="background:#3498db; color:white; border:none; padding:4px 8px; border-radius:4px; cursor:pointer; margin-right: 10px; font-size: 0.85em;">🖼️ PNG</button>
-                <button onclick="document.getElementById('profile-window').style.display='none'" style="cursor:pointer; background:#e74c3c; color:white; border:none; padding:4px 8px; border-radius:4px; font-size: 0.85em;">✕ Fermer</button>
+                <button onclick="document.getElementById('profile-window').style.display='none'" style="cursor:pointer; background:#e74c3c; color:white; border:none; padding:4px 8px; border-radius:4px; font-size: 0.85em;">✕</button>
             </div>
         </div>
-        
         <div id="profile-body">
             <canvas id="profileChart"></canvas>
         </div>
     </div>
+
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.11.0/proj4.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/geotiff"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/jszip@3.10.1/dist/jszip.min.js"></script>
+    <script src="https://unpkg.com/leaflet-kmz@latest/dist/leaflet-kmz.js"></script>
+    
     <script src="main.js"></script>
 </body>
 </html>

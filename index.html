@@ -86,7 +86,7 @@
         </div>
     </div>
 
-    <div id="profile-window">
+   <div id="profile-window">
         <div id="profile-header">
             <span>📈 Profil Altimétrique <small style="font-weight:normal; color:#888;">(Déplacez-moi !)</small></span>
             <div>
@@ -96,16 +96,25 @@
             </div>
         </div>
         
-        <div id="profile-controls" style="background: #f1f2f6; padding: 5px 15px; display: flex; gap: 10px; font-size: 0.85em; border-bottom: 1px solid #ddd; color: #333; align-items: center;">
-            <strong>Échelles :</strong>
-            <label>X Min: <input type="number" id="x-min" placeholder="auto" style="width: 50px; text-align: center; border: 1px solid #ccc;"></label>
-            <label>X Max: <input type="number" id="x-max" placeholder="auto" style="width: 50px; text-align: center; border: 1px solid #ccc;"></label>
-            <span style="color:#aaa;">|</span>
-            <label>Z Min: <input type="number" id="y-min" placeholder="auto" style="width: 50px; text-align: center; border: 1px solid #ccc;"></label>
-            <label>Z Max: <input type="number" id="y-max" placeholder="auto" style="width: 50px; text-align: center; border: 1px solid #ccc;"></label>
-            <button onclick="updateChartScales()" style="cursor:pointer; background:#f39c12; color:white; border:none; padding:3px 10px; border-radius:3px; margin-left: auto;">🔄 Appliquer</button>
+        <div id="profile-controls" style="background: #f1f2f6; padding: 8px 15px; font-size: 0.8em; border-bottom: 1px solid #ddd; color: #333; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <strong style="width: 50px;">Axe X :</strong>
+                <span style="font-size:0.9em; color:#666;">Min</span> <input type="range" id="x-min" oninput="updateScalesLive()" style="flex-grow: 1; cursor:pointer;">
+                <span style="font-size:0.9em; color:#666;">Max</span> <input type="range" id="x-max" oninput="updateScalesLive()" style="flex-grow: 1; cursor:pointer;">
+                <span id="x-vals" style="width: 90px; text-align: right; font-family: monospace; font-weight: bold; color: #2980b9;">0m - 0m</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <strong style="width: 50px;">Axe Z :</strong>
+                <span style="font-size:0.9em; color:#666;">Min</span> <input type="range" id="y-min" oninput="updateScalesLive()" style="flex-grow: 1; cursor:pointer;">
+                <span style="font-size:0.9em; color:#666;">Max</span> <input type="range" id="y-max" oninput="updateScalesLive()" style="flex-grow: 1; cursor:pointer;">
+                <span id="y-vals" style="width: 90px; text-align: right; font-family: monospace; font-weight: bold; color: #e67e22;">0m - 0m</span>
+            </div>
         </div>
 
+        <div id="profile-body" style="height: calc(100% - 95px); width: 100%; position: relative; padding: 10px; box-sizing: border-box;">
+            <canvas id="profileChart"></canvas>
+        </div>
+    </div>
         <div id="profile-body" style="height: calc(100% - 75px); width: 100%; position: relative; padding: 10px; box-sizing: border-box;">
             <canvas id="profileChart"></canvas>
         </div>

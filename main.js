@@ -85,7 +85,7 @@ document.getElementById('kmz-input').onchange = (e) => {
 
 window.loadGithubKMZ = () => {
     const url = prompt("Entrez l'URL raw du fichier .kmz sur GitHub\n(ex: https://raw.githubusercontent.com/...)");
-    if (url) processKMZ(url, "pistes_github.kmz");
+    if (url) processKMZ(url, "pistes.kmz");
 };
 
 function processKMZ(url, name) {

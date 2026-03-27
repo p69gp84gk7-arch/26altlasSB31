@@ -1,7 +1,7 @@
 const canonData =
 {
 "type": "FeatureCollection",
-"name": "baby",
+"name": "canon",
 "features": [
 { "type": "Feature", "properties": { "Name": 33 }, "geometry": { "type": "Point", "coordinates": [ 0.5766585, 42.7688748, 0.0 ] } },
 { "type": "Feature", "properties": { "Name": 31 }, "geometry": { "type": "Point", "coordinates": [ 0.575286, 42.769135, 0.0 ] } },

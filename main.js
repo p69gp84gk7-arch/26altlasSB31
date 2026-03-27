@@ -346,37 +346,64 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('mouseup', () => { isDragging = false; });
 
 // ==========================================
-// 10. CHARGEMENT DU TRACÉ (DEPUIS PISTES.JS)
+// 10. CHARGEMENT DU TRACÉ (PISTES ET CANONS)
 // ==========================================
 window.addEventListener('load', () => {
     try {
-        // On vérifie si la variable 'pistesData' (qui vient de pistes.js) existe bien
+        // --- 1. CHARGEMENT DES PISTES ---
         if (typeof pistesData !== 'undefined' && pistesData.features) {
-            const id = Date.now();
+            const idPistes = Date.now(); // ID unique pour les pistes
             
-            // On dessine les pistes avec la couleur rouge par défaut
-            const geoLayer = L.geoJSON(pistesData, {
+            const pistesLayer = L.geoJSON(pistesData, {
                 style: function (feature) {
                     return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 };
                 }
             }).addTo(map);
 
-            // On l'ajoute au menu de gauche
             kmzStore.push({ 
-                id: id, 
+                id: idPistes, 
                 name: "Mes Pistes", 
-                layer: geoLayer, 
+                layer: pistesLayer, 
                 visible: true, 
                 color: '#ffffff', 
                 weight: 1 
             });
             
-            updateKmzUI();
-            map.fitBounds(geoLayer.getBounds());
-        } else {
-            console.warn("Attention: pistesData est introuvable ou vide. Avez-vous bien créé pistes.js ?");
+            map.fitBounds(pistesLayer.getBounds()); // On centre la carte sur les pistes
         }
+
+        // --- 2. CHARGEMENT DES CANONS ---
+        if (typeof canonData !== 'undefined' && canonData.features) {
+            const idCanons = Date.now() + 1000; // ID unique différent pour les canons
+            
+            const canonLayer = L.geoJSON(canonData, {
+                // ASTUCE : Pour les points, on utilise pointToLayer au lieu de style
+                pointToLayer: function (feature, latlng) {
+                    return L.circleMarker(latlng, {
+                        radius: 5,              // Taille du point
+                        fillColor: '#3498db',   // Couleur de l'intérieur (Bleu)
+                        color: '#ffffff',       // Couleur de la bordure (Blanc)
+                        weight: 1,              // Épaisseur de la bordure
+                        opacity: 1,
+                        fillOpacity: 0.8
+                    });
+                }
+            }).addTo(map);
+
+            kmzStore.push({ 
+                id: idCanons, 
+                name: "Mes Canons", 
+                layer: canonLayer, 
+                visible: true, 
+                color: '#3498db', // Bleu dans le menu de gauche
+                weight: 1 
+            });
+        }
+
+        // On met à jour le menu une seule fois à la fin
+        updateKmzUI();
+
     } catch (e) {
-        console.error("Erreur de chargement des pistes :", e);
+        console.error("Erreur de chargement des données :", e);
     }
 });

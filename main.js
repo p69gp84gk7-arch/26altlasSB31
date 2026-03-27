@@ -399,18 +399,22 @@ window.addEventListener('load', () => {
                 color: '#ffffff', 
                 weight: 1 
             });
-             // On dessine les canons
+try {
+        // On vérifie si la variable 'pistesData' (qui vient de pistes.js) existe bien
+        if (typeof pistesData !== 'undefined' && canonData.features) {
+            const id = Date.now();
+            
+            // On dessine les pistes
             const geoLayer = L.geoJSON(canonData, {
                 style: function (feature) {
                     return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 };
                 }
-            })
-            .addTo(map);
+            }).addTo(map);
 
             // On l'ajoute au menu de gauche
             kmzStore.push({ 
                 id: id, 
-                name: "canon", 
+                name: "Mes Canons", 
                 layer: geoLayer, 
                 visible: true, 
                 color: '#ffffff', 

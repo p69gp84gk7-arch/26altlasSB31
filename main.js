@@ -391,8 +391,8 @@ window.addEventListener('load', () => {
             }).addTo(map);
 
             kmzStore.push({ 
-                id: idCanons, 
-                name: "Mes Canons", 
+                id: idcanon, 
+                name: "canon", 
                 layer: canonLayer, 
                 visible: true, 
                 color: '#3498db', // Bleu dans le menu de gauche

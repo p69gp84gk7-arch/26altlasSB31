@@ -65,6 +65,75 @@ document.getElementById('mnt-input').onchange = async (e) => {
             map.fitBounds(visual.getBounds());
         } catch(err) { console.error("Erreur MNT :", err); }
     }
+    window.loadRemoteMNT = async () => {
+    const select = document.getElementById('mnt-select');
+    const url = select.value;
+    const name = select.options[select.selectedIndex].text;
+
+    if (!url) {
+        alert("Veuillez sélectionner un MNT dans la liste déroulante.");
+        return;
+    }
+
+    // On change le texte du bouton pour faire patienter l'utilisateur (un TIF est lourd à télécharger !)
+    const btn = document.querySelector('button[onclick="loadRemoteMNT()"]');
+    const oldText = btn.innerText;
+    btn.innerText = "⏳ Téléchargement en cours...";
+    btn.style.background = "#f39c12"; // On passe le bouton en orange
+    btn.disabled = true;
+
+    try {
+        // 1. On télécharge le fichier depuis GitHub
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Erreur réseau lors du téléchargement");
+        
+        // 2. On transforme le fichier en données brutes
+        const buffer = await response.arrayBuffer();
+
+        // 3. On fait exactement le même travail que pour un fichier local !
+        const tiff = await GeoTIFF.fromArrayBuffer(buffer);
+        const image = await tiff.getImage();
+        const bbox = image.getBoundingBox();
+        const raster = await image.readRasters();
+        
+        const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
+        const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
+        
+        const defaultColor = "#00d1b2";
+        const defaultWeight = 2;
+        
+        const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { 
+            color: defaultColor, 
+            weight: defaultWeight, 
+            fillOpacity: 0.15 
+        }).addTo(map);
+
+        mntStore.push({ 
+            id: Date.now()+Math.random(), 
+            name: name, // On lui donne le nom de la liste déroulante
+            bbox, 
+            width: image.getWidth(), 
+            height: image.getHeight(), 
+            data: raster[0], 
+            visual, 
+            visible: true,
+            color: defaultColor,
+            weight: defaultWeight
+        });
+        
+        map.fitBounds(visual.getBounds());
+        updateMntUI();
+
+    } catch(err) { 
+        console.error("Erreur de chargement du MNT distant :", err);
+        alert("Impossible de charger le MNT. Vérifiez que le lien GitHub est correct et que le fichier fait moins de 100 Mo.");
+    } finally {
+        // On remet le bouton à la normale une fois terminé
+        btn.innerText = oldText;
+        btn.style.background = "#00d1b2";
+        btn.disabled = false;
+    }
+};
     updateMntUI();
 };
 

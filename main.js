@@ -357,7 +357,7 @@ window.addEventListener('load', () => {
             // On dessine les pistes avec la couleur rouge par défaut
             const geoLayer = L.geoJSON(pistesData, {
                 style: function (feature) {
-                    return { color: '#e74c3c', weight: 3, opacity: 1, fillOpacity: 0.2 };
+                    return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 };
                 }
             }).addTo(map);
 

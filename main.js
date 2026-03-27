@@ -399,31 +399,3 @@ window.addEventListener('load', () => {
                 color: '#ffffff', 
                 weight: 1 
             });
-try {
-        // On vérifie si la variable 'pistesData' (qui vient de pistes.js) existe bien
-        if (typeof canonData !== 'undefined' && canonData.features) {
-            const id = Date.now();
-            
-            // On dessine les pistes
-            const geoLayer = L.geoJSON(canonData, {
-                style: function (feature) {
-                    return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 };
-                }
-            }).addTo(map);
-
-            // On l'ajoute au menu de gauche
-            kmzStore.push({ 
-                id: id, 
-                name: "Mes Canons", 
-                layer: geoLayer, 
-                visible: true, 
-                color: '#ffffff', 
-                weight: 1 
-            });
-            updateKmzUI();
-            map.fitBounds(geoLayer.getBounds());
-        }
-    } catch (e) {
-        console.error("Erreur de chargement des pistes :", e);
-    }
-});

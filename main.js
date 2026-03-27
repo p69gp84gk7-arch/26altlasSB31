@@ -24,8 +24,63 @@ let currentProfileExportData = [];
 let currentProfileDrawId = null;
 
 // ==========================================
-// 2. IMPORTATION MNT
+// 2. IMPORTATION MNT (LOCAL ET SERVEUR)
 // ==========================================
+
+// --- Fonction 1 : Téléchargement depuis GitHub ---
+window.loadRemoteMNT = async () => {
+    const select = document.getElementById('mnt-select');
+    const url = select.value;
+    const name = select.options[select.selectedIndex].text;
+
+    if (!url) {
+        alert("Veuillez sélectionner un MNT dans la liste déroulante.");
+        return;
+    }
+
+    const btn = document.querySelector('button[onclick="loadRemoteMNT()"]');
+    const oldText = btn.innerText;
+    btn.innerText = "⏳ Téléchargement en cours...";
+    btn.style.background = "#f39c12"; 
+    btn.disabled = true;
+
+    try {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error("Erreur réseau");
+        const buffer = await response.arrayBuffer();
+
+        const tiff = await GeoTIFF.fromArrayBuffer(buffer);
+        const image = await tiff.getImage();
+        const bbox = image.getBoundingBox();
+        const raster = await image.readRasters();
+        
+        const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
+        const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
+        
+        const defaultColor = "#00d1b2";
+        const defaultWeight = 2;
+        
+        const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { 
+            color: defaultColor, weight: defaultWeight, fillOpacity: 0.15 
+        }).addTo(map);
+
+        mntStore.push({ 
+            id: Date.now()+Math.random(), name: name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true, color: defaultColor, weight: defaultWeight
+        });
+        
+        map.fitBounds(visual.getBounds());
+        updateMntUI();
+    } catch(err) { 
+        console.error(err);
+        alert("Impossible de charger le MNT. Vérifiez le lien GitHub.");
+    } finally {
+        btn.innerText = oldText;
+        btn.style.background = "#00d1b2";
+        btn.disabled = false;
+    }
+};
+
+// --- Fonction 2 : Importation d'un fichier local ---
 document.getElementById('mnt-input').onchange = async (e) => {
     for (const file of e.target.files) {
         if (!file.name.match(/\.(tif|tiff)$/i)) continue;
@@ -39,131 +94,31 @@ document.getElementById('mnt-input').onchange = async (e) => {
             const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
             const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
             
-            // On prépare la couleur et l'épaisseur par défaut
             const defaultColor = "#00d1b2";
             const defaultWeight = 2;
             
-            const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { 
-                color: defaultColor, 
-                weight: defaultWeight, 
-                fillOpacity: 0.15 
-            }).addTo(map);
+            const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { color: defaultColor, weight: defaultWeight, fillOpacity: 0.15 }).addTo(map);
 
-            mntStore.push({ 
-                id: Date.now()+Math.random(), 
-                name: file.name, 
-                bbox, 
-                width: image.getWidth(), 
-                height: image.getHeight(), 
-                data: raster[0], 
-                visual, 
-                visible: true,
-                color: defaultColor,   // Nouvelle gestion de la couleur
-                weight: defaultWeight  // Nouvelle gestion de l'épaisseur
-            });
-            
+            mntStore.push({ id: Date.now()+Math.random(), name: file.name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true, color: defaultColor, weight: defaultWeight });
             map.fitBounds(visual.getBounds());
         } catch(err) { console.error("Erreur MNT :", err); }
     }
-    window.loadRemoteMNT = async () => {
-    const select = document.getElementById('mnt-select');
-    const url = select.value;
-    const name = select.options[select.selectedIndex].text;
-
-    if (!url) {
-        alert("Veuillez sélectionner un MNT dans la liste déroulante.");
-        return;
-    }
-
-    // On change le texte du bouton pour faire patienter l'utilisateur (un TIF est lourd à télécharger !)
-    const btn = document.querySelector('button[onclick="loadRemoteMNT()"]');
-    const oldText = btn.innerText;
-    btn.innerText = "⏳ Téléchargement en cours...";
-    btn.style.background = "#f39c12"; // On passe le bouton en orange
-    btn.disabled = true;
-
-    try {
-        // 1. On télécharge le fichier depuis GitHub
-        const response = await fetch(url);
-        if (!response.ok) throw new Error("Erreur réseau lors du téléchargement");
-        
-        // 2. On transforme le fichier en données brutes
-        const buffer = await response.arrayBuffer();
-
-        // 3. On fait exactement le même travail que pour un fichier local !
-        const tiff = await GeoTIFF.fromArrayBuffer(buffer);
-        const image = await tiff.getImage();
-        const bbox = image.getBoundingBox();
-        const raster = await image.readRasters();
-        
-        const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
-        const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
-        
-        const defaultColor = "#00d1b2";
-        const defaultWeight = 2;
-        
-        const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { 
-            color: defaultColor, 
-            weight: defaultWeight, 
-            fillOpacity: 0.15 
-        }).addTo(map);
-
-        mntStore.push({ 
-            id: Date.now()+Math.random(), 
-            name: name, // On lui donne le nom de la liste déroulante
-            bbox, 
-            width: image.getWidth(), 
-            height: image.getHeight(), 
-            data: raster[0], 
-            visual, 
-            visible: true,
-            color: defaultColor,
-            weight: defaultWeight
-        });
-        
-        map.fitBounds(visual.getBounds());
-        updateMntUI();
-
-    } catch(err) { 
-        console.error("Erreur de chargement du MNT distant :", err);
-        alert("Impossible de charger le MNT. Vérifiez que le lien GitHub est correct et que le fichier fait moins de 100 Mo.");
-    } finally {
-        // On remet le bouton à la normale une fois terminé
-        btn.innerText = oldText;
-        btn.style.background = "#00d1b2";
-        btn.disabled = false;
-    }
-};
     updateMntUI();
 };
 
+// --- Fonction 3 : Mise à jour de l'interface ---
 function updateMntUI() {
     const list = document.getElementById('mnt-list');
     if (!list) return;
     list.innerHTML = '';
     mntStore.forEach(m => {
-        // On utilise exactement le même design de "carte" que pour les pistes !
-        list.innerHTML += `<div class="card" style="border-left-color: ${m.color}"><div class="card-header"><div><input type="checkbox" ${m.visible ? 'checked' : ''} onchange="toggleMNT(${m.id})"> <input type="color" class="color-picker" value="${m.color}" onchange="changeMntColor(${m.id}, this.value)"> <span>${m.name.substring(0,15)}...</span></div><button class="btn-del" onclick="deleteMNT(${m.id})">✕</button></div><div style="margin-top:5px; font-size: 0.9em;">Épaisseur : <input type="range" min="1" max="10" value="${m.weight}" class="slider-width" onchange="changeMntWeight(${m.id}, this.value)"></div></div>`;
+        list.innerHTML += `<div class="card" style="border-left-color: ${m.color}"><div class="card-header"><div><input type="checkbox" ${m.visible ? 'checked' : ''} onchange="toggleMNT(${m.id})"> <input type="color" class="color-picker" value="${m.color}" onchange="changeMntColor(${m.id}, this.value)"> <span>${m.name.substring(0,18)}</span></div><button class="btn-del" onclick="deleteMNT(${m.id})">✕</button></div><div style="margin-top:5px; font-size: 0.9em;">Épaisseur : <input type="range" min="1" max="10" value="${m.weight}" class="slider-width" onchange="changeMntWeight(${m.id}, this.value)"></div></div>`;
     });
 }
 
-// Nouvelles fonctions de gestion du style pour les MNT
-window.changeMntColor = (id, color) => { 
-    const m = mntStore.find(x => x.id === id); 
-    if (!m) return; 
-    m.color = color; 
-    m.visual.setStyle({ color: color }); 
-    updateMntUI(); 
-};
-
-window.changeMntWeight = (id, weight) => { 
-    const m = mntStore.find(x => x.id === id); 
-    if (!m) return; 
-    m.weight = parseInt(weight); 
-    m.visual.setStyle({ weight: m.weight }); 
-    updateMntUI(); 
-};
-
+// --- Fonctions 4 : Contrôles visuels (Couleurs, Épaisseur, Masquage) ---
+window.changeMntColor = (id, color) => { const m = mntStore.find(x => x.id === id); if (!m) return; m.color = color; m.visual.setStyle({ color: color }); updateMntUI(); };
+window.changeMntWeight = (id, weight) => { const m = mntStore.find(x => x.id === id); if (!m) return; m.weight = parseInt(weight); m.visual.setStyle({ weight: m.weight }); updateMntUI(); };
 window.toggleMNT = (id) => { const m = mntStore.find(x => x.id === id); m.visible = !m.visible; if (m.visible) m.visual.addTo(map); else map.removeLayer(m.visual); };
 window.deleteMNT = (id) => { const m = mntStore.find(x => x.id === id); map.removeLayer(m.visual); mntStore = mntStore.filter(x => x.id !== id); updateMntUI(); };
 

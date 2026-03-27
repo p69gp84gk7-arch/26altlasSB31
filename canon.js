@@ -1,5 +1,4 @@
-const canonData =
-{
+const canonData = {
 "type": "FeatureCollection",
 "name": "canon",
 "features": [
@@ -13,7 +12,7 @@ const canonData =
 { "type": "Feature", "properties": { "Name": 61 }, "geometry": { "type": "Point", "coordinates": [ 0.574858, 42.7699358, 0.0 ] } },
 { "type": "Feature", "properties": { "Name": 62 }, "geometry": { "type": "Point", "coordinates": [ 0.5745362, 42.7702367, 0.0 ] } },
 { "type": "Feature", "properties": { "Name": 63 }, "geometry": { "type": "Point", "coordinates": [ 0.5740207, 42.770616, 0.0 ] } },
-  { "type": "Feature", "properties": { "Name": 119 }, "geometry": { "type": "Point", "coordinates": [ 0.5784412, 42.7651933, 0.0 ] } },
+{ "type": "Feature", "properties": { "Name": 119 }, "geometry": { "type": "Point", "coordinates": [ 0.5784412, 42.7651933, 0.0 ] } },
 { "type": "Feature", "properties": { "Name": 121 }, "geometry": { "type": "Point", "coordinates": [ 0.5784736, 42.7682587, 0.0 ] } },
 { "type": "Feature", "properties": { "Name": 122 }, "geometry": { "type": "Point", "coordinates": [ 0.579209, 42.7681553, 0.0 ] } },
 { "type": "Feature", "properties": { "Name": 123 }, "geometry": { "type": "Point", "coordinates": [ 0.5782233, 42.767675, 0.0 ] } },
@@ -223,4 +222,4 @@ const canonData =
 { "type": "Feature", "properties": { "Name": 29 }, "geometry": { "type": "Point", "coordinates": [ 0.5742436, 42.7687566, 0.0 ] } },
 { "type": "Feature", "properties": { "Name": 30 }, "geometry": { "type": "Point", "coordinates": [ 0.5746104, 42.7689954, 0.0 ] } }
 ]
-}
+};

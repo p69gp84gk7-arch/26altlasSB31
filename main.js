@@ -48,8 +48,7 @@ document.getElementById('mnt-input').onchange = async (e) => {
 };
 
 function updateMntUI() {
-    const list = document.getElementById('mnt-list');
-    list.innerHTML = '';
+    const list = document.getElementById('mnt-list'); list.innerHTML = '';
     mntStore.forEach(m => {
         list.innerHTML += `<div class="card"><div class="card-header"><div><input type="checkbox" ${m.visible ? 'checked' : ''} onchange="toggleMNT(${m.id})"> <span>${m.name.substring(0,18)}...</span></div><button class="btn-del" onclick="deleteMNT(${m.id})">✕</button></div></div>`;
     });
@@ -76,25 +75,8 @@ function getZ(l93) {
 }
 
 // ==========================================
-// 3. GESTION DES KMZ (IMPORT MANUEL)
+// 3. GESTION DES KMZ
 // ==========================================
-document.getElementById('kmz-input').onchange = (e) => {
-    const file = e.target.files[0];
-    if (file) { const url = URL.createObjectURL(file); processKMZ(url, file.name); }
-};
-
-function processKMZ(url, name) {
-    const kmzLayer = L.kmzLayer().addTo(map);
-    kmzLayer.on('load', function(e) {
-        const id = Date.now();
-        kmzStore.push({ id, name, layer: e.layer, visible: true, color: '#e74c3c', weight: 3 });
-        updateKmzUI();
-        applyKmzStyle(id);
-        map.fitBounds(e.layer.getBounds());
-    });
-    kmzLayer.load(url);
-}
-
 function updateKmzUI() {
     const list = document.getElementById('kmz-list'); list.innerHTML = '';
     kmzStore.forEach(k => {
@@ -275,16 +257,12 @@ function generateProfile(d) {
 
     document.getElementById('profileChart').onmouseleave = () => { if (cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; } };
 
-    const xMinSlider = document.getElementById('x-min');
-    const xMaxSlider = document.getElementById('x-max');
-    const yMinSlider = document.getElementById('y-min');
-    const yMaxSlider = document.getElementById('y-max');
+    const xMinSlider = document.getElementById('x-min'); const xMaxSlider = document.getElementById('x-max');
+    const yMinSlider = document.getElementById('y-min'); const yMaxSlider = document.getElementById('y-max');
 
-    let minZ = Math.min(...chartData.map(pt => pt.y));
-    let maxZ = Math.max(...chartData.map(pt => pt.y));
+    let minZ = Math.min(...chartData.map(pt => pt.y)); let maxZ = Math.max(...chartData.map(pt => pt.y));
     const zMargin = (maxZ - minZ) * 0.1 || 10;
-    minZ = Math.floor(minZ - zMargin);
-    maxZ = Math.ceil(maxZ + zMargin);
+    minZ = Math.floor(minZ - zMargin); maxZ = Math.ceil(maxZ + zMargin);
 
     if(xMinSlider && xMaxSlider && yMinSlider && yMaxSlider) {
         xMinSlider.min = 0; xMinSlider.max = d.totalDist; xMinSlider.value = 0; xMinSlider.step = d.totalDist / 200 || 1;
@@ -301,16 +279,9 @@ function generateProfile(d) {
 window.exportChartPNG = () => { const a = document.createElement('a'); a.href = document.getElementById('profileChart').toDataURL('image/png'); a.download = 'profil.png'; a.click(); };
 window.exportChartCSV = () => {
     let csv = "\ufeffDistance (m)\tAltitude Z (m)\n";
-    
-    currentProfileExportData.forEach(row => { 
-        csv += `${row.dist.replace('.', ',')}\t${row.z.replace('.', ',')}\n`; 
-    });
-    
+    currentProfileExportData.forEach(row => { csv += `${row.dist.replace('.', ',')}\t${row.z.replace('.', ',')}\n`; });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); 
-    a.href = URL.createObjectURL(blob); 
-    a.download = 'export_profil_1m.csv'; 
-    a.click();
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'export_profil_1m.csv'; a.click();
 };
 
 // ==========================================
@@ -383,10 +354,10 @@ window.addEventListener('load', () => {
         if (typeof pistesData !== 'undefined' && pistesData.features) {
             const id = Date.now();
             
-            // On dessine les pistes
+            // On dessine les pistes avec la couleur rouge par défaut
             const geoLayer = L.geoJSON(pistesData, {
                 style: function (feature) {
-                    return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 };
+                    return { color: '#e74c3c', weight: 3, opacity: 1, fillOpacity: 0.2 };
                 }
             }).addTo(map);
 
@@ -396,6 +367,16 @@ window.addEventListener('load', () => {
                 name: "Mes Pistes", 
                 layer: geoLayer, 
                 visible: true, 
-                color: '#ffffff', 
-                weight: 1 
+                color: '#e74c3c', 
+                weight: 3 
             });
+            
+            updateKmzUI();
+            map.fitBounds(geoLayer.getBounds());
+        } else {
+            console.warn("Attention: pistesData est introuvable ou vide. Avez-vous bien créé pistes.js ?");
+        }
+    } catch (e) {
+        console.error("Erreur de chargement des pistes :", e);
+    }
+});

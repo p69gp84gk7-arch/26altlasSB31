@@ -38,21 +38,62 @@ document.getElementById('mnt-input').onchange = async (e) => {
             
             const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
             const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
-            const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { color: "#00d1b2", weight: 2, fillOpacity: 0.15 }).addTo(map);
+            
+            // On prépare la couleur et l'épaisseur par défaut
+            const defaultColor = "#00d1b2";
+            const defaultWeight = 2;
+            
+            const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { 
+                color: defaultColor, 
+                weight: defaultWeight, 
+                fillOpacity: 0.15 
+            }).addTo(map);
 
-            mntStore.push({ id: Date.now()+Math.random(), name: file.name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true });
+            mntStore.push({ 
+                id: Date.now()+Math.random(), 
+                name: file.name, 
+                bbox, 
+                width: image.getWidth(), 
+                height: image.getHeight(), 
+                data: raster[0], 
+                visual, 
+                visible: true,
+                color: defaultColor,   // Nouvelle gestion de la couleur
+                weight: defaultWeight  // Nouvelle gestion de l'épaisseur
+            });
+            
             map.fitBounds(visual.getBounds());
-        } catch(err) { console.error(err); }
+        } catch(err) { console.error("Erreur MNT :", err); }
     }
     updateMntUI();
 };
 
 function updateMntUI() {
-    const list = document.getElementById('mnt-list'); list.innerHTML = '';
+    const list = document.getElementById('mnt-list');
+    if (!list) return;
+    list.innerHTML = '';
     mntStore.forEach(m => {
-        list.innerHTML += `<div class="card"><div class="card-header"><div><input type="checkbox" ${m.visible ? 'checked' : ''} onchange="toggleMNT(${m.id})"> <span>${m.name.substring(0,18)}...</span></div><button class="btn-del" onclick="deleteMNT(${m.id})">✕</button></div></div>`;
+        // On utilise exactement le même design de "carte" que pour les pistes !
+        list.innerHTML += `<div class="card" style="border-left-color: ${m.color}"><div class="card-header"><div><input type="checkbox" ${m.visible ? 'checked' : ''} onchange="toggleMNT(${m.id})"> <input type="color" class="color-picker" value="${m.color}" onchange="changeMntColor(${m.id}, this.value)"> <span>${m.name.substring(0,15)}...</span></div><button class="btn-del" onclick="deleteMNT(${m.id})">✕</button></div><div style="margin-top:5px; font-size: 0.9em;">Épaisseur : <input type="range" min="1" max="10" value="${m.weight}" class="slider-width" onchange="changeMntWeight(${m.id}, this.value)"></div></div>`;
     });
 }
+
+// Nouvelles fonctions de gestion du style pour les MNT
+window.changeMntColor = (id, color) => { 
+    const m = mntStore.find(x => x.id === id); 
+    if (!m) return; 
+    m.color = color; 
+    m.visual.setStyle({ color: color }); 
+    updateMntUI(); 
+};
+
+window.changeMntWeight = (id, weight) => { 
+    const m = mntStore.find(x => x.id === id); 
+    if (!m) return; 
+    m.weight = parseInt(weight); 
+    m.visual.setStyle({ weight: m.weight }); 
+    updateMntUI(); 
+};
 
 window.toggleMNT = (id) => { const m = mntStore.find(x => x.id === id); m.visible = !m.visible; if (m.visible) m.visual.addTo(map); else map.removeLayer(m.visual); };
 window.deleteMNT = (id) => { const m = mntStore.find(x => x.id === id); map.removeLayer(m.visual); mntStore = mntStore.filter(x => x.id !== id); updateMntUI(); };
@@ -73,7 +114,6 @@ function getZ(l93) {
         }
     } return null;
 }
-
 // ==========================================
 // 3. GESTION DE L'INTERFACE DES CALQUES
 // ==========================================

@@ -401,7 +401,7 @@ window.addEventListener('load', () => {
             });
 try {
         // On vérifie si la variable 'pistesData' (qui vient de pistes.js) existe bien
-        if (typeof pistesData !== 'undefined' && canonData.features) {
+        if (typeof canonData !== 'undefined' && canonData.features) {
             const id = Date.now();
             
             // On dessine les pistes

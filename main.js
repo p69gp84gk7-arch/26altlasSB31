@@ -399,12 +399,18 @@ window.addEventListener('load', () => {
                 color: '#ffffff', 
                 weight: 1 
             });
+             // On dessine les pistes
+            const geoLayer = L.geoJSON(canonData, {
+                style: function (feature) {
+                    return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 };
+                }
+            })
             .addTo(map);
 
             // On l'ajoute au menu de gauche
             kmzStore.push({ 
                 id: id, 
-                name: "canons", 
+                name: "canon", 
                 layer: geoLayer, 
                 visible: true, 
                 color: '#ffffff', 

@@ -202,8 +202,13 @@ window.finalizeDraw = () => {
         const type = currentTool; const color = type === 'area' ? '#e67e22' : '#3498db';
         const layer = type === 'area' ? L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map) : L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
         if (tempLayer) map.removeLayer(tempLayer); tempLayer = null;
-        const drawObj = { id: Date.now(), type, layer, ptsGPS: [...currentPoints], visible: true, color, editGroup: L.layerGroup().addTo(map) };
+        
+        // On donne un nom par défaut selon l'outil utilisé
+        const defaultName = type === 'line' ? 'Mon Parcours' : 'Ma Surface';
+        
+        const drawObj = { id: Date.now(), type, name: defaultName, layer, ptsGPS: [...currentPoints], visible: true, color, editGroup: L.layerGroup().addTo(map) };
         drawStore.push(drawObj); recalculateStats(drawObj); makeEditable(drawObj);
+        
         if (type === 'line') { currentProfileDrawId = drawObj.id; generateProfile(drawObj); } 
         currentTool = null; currentPoints = [];
         document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
@@ -231,13 +236,25 @@ function recalculateStats(d) {
 }
 
 function updateDrawUI() {
-    const list = document.getElementById('measure-list'); list.innerHTML = '';
+    const list = document.getElementById('measure-list'); 
+    if (!list) return;
+    list.innerHTML = '';
     drawStore.forEach(d => {
-        const title = d.type === 'line' ? 'PARCOURS' : 'SURFACE';
-        list.innerHTML += `<div class="card" style="border-left-color: ${d.color}"><div class="card-header"><div><input type="checkbox" ${d.visible ? 'checked' : ''} onchange="toggleDraw(${d.id})"> <input type="color" class="color-picker" value="${d.color}" onchange="changeColor(${d.id}, this.value)"> <strong>${title}</strong></div><button class="btn-del" onclick="deleteDraw(${d.id})">✕</button></div><div id="stats-${d.id}" style="margin-top:5px; font-size:1.1em;">${d.statsHtml}</div>${d.type === 'line' ? `<button onclick="generateProfileById(${d.id})" style="width:100%; margin-top:8px; font-size:0.8em; cursor:pointer; background:#333; color:white; border:1px solid #555; padding:5px; border-radius:3px;">Afficher le profil</button>` : ''}</div>`;
+        // On remplace le titre fixe par le nom cliquable (d.name)
+        list.innerHTML += `<div class="card" style="border-left-color: ${d.color}"><div class="card-header"><div><input type="checkbox" ${d.visible ? 'checked' : ''} onchange="toggleDraw(${d.id})"> <input type="color" class="color-picker" value="${d.color}" onchange="changeColor(${d.id}, this.value)"> <strong style="cursor:pointer;" onclick="renameDraw(${d.id})" title="Cliquez pour renommer">${d.name}</strong></div><button class="btn-del" onclick="deleteDraw(${d.id})">✕</button></div><div id="stats-${d.id}" style="margin-top:5px; font-size:1.1em;">${d.statsHtml}</div>${d.type === 'line' ? `<button onclick="generateProfileById(${d.id})" style="width:100%; margin-top:8px; font-size:0.8em; cursor:pointer; background:#333; color:white; border:1px solid #555; padding:5px; border-radius:3px;">Afficher le profil</button>` : ''}</div>`;
     });
 }
 
+// Nouvelle fonction pour renommer les tracés et surfaces à droite
+window.renameDraw = (id) => { 
+    const d = drawStore.find(x => x.id === id); 
+    if (!d) return; 
+    const newName = prompt("Nouveau nom pour ce tracé :", d.name); 
+    if (newName && newName.trim() !== "") { 
+        d.name = newName.trim(); 
+        updateDrawUI(); 
+    } 
+};
 function makeEditable(d) {
     d.editGroup.clearLayers(); if (!d.visible) return;
     const icon = L.divIcon({ className: 'edit-handle', iconSize: [12, 12] });

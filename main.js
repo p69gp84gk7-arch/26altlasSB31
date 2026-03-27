@@ -367,8 +367,8 @@ window.addEventListener('load', () => {
                 name: "Mes Pistes", 
                 layer: geoLayer, 
                 visible: true, 
-                color: '#e74c3c', 
-                weight: 3 
+                color: '#ffffff', 
+                weight: 1 
             });
             
             updateKmzUI();

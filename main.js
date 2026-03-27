@@ -386,7 +386,7 @@ window.addEventListener('load', () => {
             // On dessine les pistes
             const geoLayer = L.geoJSON(pistesData, {
                 style: function (feature) {
-                    return { color: '#e74c3c', weight: 3, opacity: 1, fillOpacity: 0.2 };
+                    return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 };
                 }
             }).addTo(map);
 
@@ -396,8 +396,8 @@ window.addEventListener('load', () => {
                 name: "Mes Pistes", 
                 layer: geoLayer, 
                 visible: true, 
-                color: '#e74c3c', 
-                weight: 3 
+                color: '#ffffff', 
+                weight: 1 
             });
             
             updateKmzUI();

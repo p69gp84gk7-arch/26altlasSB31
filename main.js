@@ -75,12 +75,15 @@ function getZ(l93) {
 }
 
 // ==========================================
-// 3. GESTION DES KMZ
+// 3. GESTION DE L'INTERFACE DES CALQUES
 // ==========================================
 function updateKmzUI() {
-    const list = document.getElementById('kmz-list'); list.innerHTML = '';
+    const list = document.getElementById('kmz-list'); 
+    if (!list) return; // Sécurité anti-bug
+    list.innerHTML = '';
+    
     kmzStore.forEach(k => {
-        list.innerHTML += `<div class="card" style="border-left-color: ${k.color}"><div class="card-header"><div><input type="checkbox" ${k.visible ? 'checked' : ''} onchange="toggleKMZ(${k.id})"> <input type="color" class="color-picker" value="${k.color}" onchange="changeKmzColor(${k.id}, this.value)"> <span>${k.name.substring(0,15)}...</span></div><button class="btn-del" onclick="deleteKMZ(${k.id})">✕</button></div><div style="margin-top:5px; font-size: 0.9em;">Épaisseur : <input type="range" min="1" max="10" value="${k.weight}" class="slider-width" onchange="changeKmzWeight(${k.id}, this.value)"></div></div>`;
+        list.innerHTML += `<div class="card" style="border-left-color: ${k.color}"><div class="card-header"><div><input type="checkbox" ${k.visible ? 'checked' : ''} onchange="toggleKMZ(${k.id})"> <input type="color" class="color-picker" value="${k.color}" onchange="changeKmzColor(${k.id}, this.value)"> <span>${k.name.substring(0,15)}</span></div><button class="btn-del" onclick="deleteKMZ(${k.id})">✕</button></div><div style="margin-top:5px; font-size: 0.9em;">Épaisseur : <input type="range" min="1" max="10" value="${k.weight}" class="slider-width" onchange="changeKmzWeight(${k.id}, this.value)"></div></div>`;
     });
 }
 
@@ -96,7 +99,6 @@ function applyKmzStyle(id) {
         else if (l.setStyle) { l.setStyle({ color: k.color, weight: k.weight }); }
     });
 }
-
 // ==========================================
 // 4. OUTILS DE TRACÉ
 // ==========================================
@@ -351,10 +353,14 @@ document.addEventListener('mouseup', () => { isDragging = false; });
 window.addEventListener('load', () => {
     try {
         // --- 1. CHARGEMENT DES PISTES ---
-        if (typeof pistesData !== 'undefined' && pistesData.features) {
-            const idPistes = Date.now(); // ID unique pour les pistes
-            
-            const pistesLayer = L.geoJSON(pistesData, {
+        // On cherche vos pistes peu importe le nom de la variable
+        let pistesGeo = null;
+        if (typeof pistesData !== 'undefined') pistesGeo = pistesData;
+        else if (typeof pistesGeoJSON !== 'undefined') pistesGeo = pistesGeoJSON;
+
+        if (pistesGeo && pistesGeo.features) {
+            const idPistes = Date.now(); 
+            const pistesLayer = L.geoJSON(pistesGeo, {
                 style: function (feature) {
                     return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 };
                 }
@@ -369,21 +375,20 @@ window.addEventListener('load', () => {
                 weight: 1 
             });
             
-            map.fitBounds(pistesLayer.getBounds()); // On centre la carte sur les pistes
+            map.fitBounds(pistesLayer.getBounds());
         }
 
         // --- 2. CHARGEMENT DES CANONS ---
         if (typeof canonData !== 'undefined' && canonData.features) {
-            const idCanon = Date.now() + 1000; // ID unique différent pour les canons
+            const idCanons = Date.now() + 1000; 
             
             const canonLayer = L.geoJSON(canonData, {
-                // ASTUCE : Pour les points, on utilise pointToLayer au lieu de style
                 pointToLayer: function (feature, latlng) {
                     return L.circleMarker(latlng, {
                         radius: 5,              // Taille du point
-                        fillColor: '#3498db',   // Couleur de l'intérieur (Bleu)
-                        color: '#ffffff',       // Couleur de la bordure (Blanc)
-                        weight: 1,              // Épaisseur de la bordure
+                        fillColor: '#3498db',   // Couleur intérieure
+                        color: '#ffffff',       // Couleur de bordure
+                        weight: 1,              // Épaisseur bordure
                         opacity: 1,
                         fillOpacity: 0.8
                     });
@@ -391,16 +396,17 @@ window.addEventListener('load', () => {
             }).addTo(map);
 
             kmzStore.push({ 
-                id: idcanon, 
-                name: "canon", 
+                id: idCanons, 
+                name: "Mes Canons", 
                 layer: canonLayer, 
                 visible: true, 
-                color: '#3498db', // Bleu dans le menu de gauche
+                color: '#3498db', 
                 weight: 1 
             });
         }
 
-        // On met à jour le menu une seule fois à la fin
+        // --- 3. AFFICHAGE DU MENU ---
+        // C'est cette ligne qui fait apparaître les cartes sur la gauche !
         updateKmzUI();
 
     } catch (e) {

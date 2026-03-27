@@ -399,7 +399,17 @@ window.addEventListener('load', () => {
                 color: '#ffffff', 
                 weight: 1 
             });
-            
+            .addTo(map);
+
+            // On l'ajoute au menu de gauche
+            kmzStore.push({ 
+                id: id, 
+                name: "canons", 
+                layer: geoLayer, 
+                visible: true, 
+                color: '#ffffff', 
+                weight: 1 
+            });
             updateKmzUI();
             map.fitBounds(geoLayer.getBounds());
         }

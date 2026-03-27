@@ -399,7 +399,7 @@ window.addEventListener('load', () => {
                 color: '#ffffff', 
                 weight: 1 
             });
-             // On dessine les pistes
+             // On dessine les canons
             const geoLayer = L.geoJSON(canonData, {
                 style: function (feature) {
                     return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 };

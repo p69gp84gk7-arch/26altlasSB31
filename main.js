@@ -374,7 +374,7 @@ window.addEventListener('load', () => {
 
         // --- 2. CHARGEMENT DES CANONS ---
         if (typeof canonData !== 'undefined' && canonData.features) {
-            const idCanons = Date.now() + 1000; // ID unique différent pour les canons
+            const idCanon = Date.now() + 1000; // ID unique différent pour les canons
             
             const canonLayer = L.geoJSON(canonData, {
                 // ASTUCE : Pour les points, on utilise pointToLayer au lieu de style

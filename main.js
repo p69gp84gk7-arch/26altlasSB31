@@ -378,7 +378,7 @@ document.addEventListener('mouseup', () => { isDragging = false; });
 // 10. CHARGEMENT DU TRACÉ "EN DUR" (GEOJSON)
 // ==========================================
 
-// Collez l'intégralité de votre texte GeoJSON à la place des accolades {} ci-dessous :
+// 1. Collez l'intégralité de votre texte GeoJSON à la place des accolades {} ci-dessous :
 const pistesGeoJSON = {
 "type": "FeatureCollection",
 "name": "Pistes_CGx_2020___Pistes",
@@ -456,30 +456,46 @@ const pistesGeoJSON = {
 ]
 };
 
-window.addEventListener('load', () => {
-    try {
-        if (pistesGeoJSON && pistesGeoJSON.features && pistesGeoJSON.features.length > 0) {
-            const id = Date.now();
-            
-            const geoLayer = L.geoJSON(pistesGeoJSON, {
-                style: function (feature) {
-                    return { color: '#e74c3c', weight: 3, opacity: 1 };
-                }
-            }).addTo(map);
-
-            kmzStore.push({ 
-                id: id, 
-                name: "Mes Pistes", 
-                layer: geoLayer, 
-                visible: true, 
-                color: '#e74c3c', 
-                weight: 3 
-            });
-            
-            updateKmzUI();
-            map.fitBounds(geoLayer.getBounds());
-        }
-    } catch (e) {
-        console.error("Erreur lors du chargement du GeoJSON :", e);
+// 2. Exécution immédiate (on n'attend plus le chargement de la page)
+try {
+    let geoData = pistesGeoJSON;
+    
+    // Sécurité : si le code a été collé comme du texte (avec des guillemets), on le convertit
+    if (typeof geoData === 'string') {
+        geoData = JSON.parse(geoData);
     }
+
+    // On vérifie que les pistes existent bien
+    if (geoData && geoData.features && geoData.features.length > 0) {
+        const id = Date.now();
+        
+        // Dessin sur la carte
+        const geoLayer = L.geoJSON(geoData, {
+            style: function (feature) {
+                // fillOpacity à 0.2 permet de voir un peu la couleur à l'intérieur des pistes
+                return { color: '#e74c3c', weight: 3, opacity: 1, fillOpacity: 0.2 };
+            }
+        }).addTo(map);
+
+        // Ajout au panneau de gauche (C'est ceci qui permet de masquer, changer la couleur, etc.)
+        kmzStore.push({ 
+            id: id, 
+            name: "Mes Pistes", 
+            layer: geoLayer, 
+            visible: true, 
+            color: '#e74c3c', 
+            weight: 3 
+        });
+        
+        // Mise à jour de l'interface
+        updateKmzUI();
+        
+        // Zoom automatique sur les pistes
+        map.fitBounds(geoLayer.getBounds());
+    } else {
+        console.warn("Le GeoJSON est vide ou mal formaté.");
+    }
+} catch (e) {
+    console.error("Erreur lors du chargement du GeoJSON :", e);
+}
 });

@@ -112,9 +112,20 @@ function updateMntUI() {
     if (!list) return;
     list.innerHTML = '';
     mntStore.forEach(m => {
-        list.innerHTML += `<div class="card" style="border-left-color: ${m.color}"><div class="card-header"><div><input type="checkbox" ${m.visible ? 'checked' : ''} onchange="toggleMNT(${m.id})"> <input type="color" class="color-picker" value="${m.color}" onchange="changeMntColor(${m.id}, this.value)"> <span>${m.name.substring(0,18)}</span></div><button class="btn-del" onclick="deleteMNT(${m.id})">✕</button></div><div style="margin-top:5px; font-size: 0.9em;">Épaisseur : <input type="range" min="1" max="10" value="${m.weight}" class="slider-width" onchange="changeMntWeight(${m.id}, this.value)"></div></div>`;
+        list.innerHTML += `<div class="card" style="border-left-color: ${m.color}"><div class="card-header"><div><input type="checkbox" ${m.visible ? 'checked' : ''} onchange="toggleMNT(${m.id})"> <input type="color" class="color-picker" value="${m.color}" onchange="changeMntColor(${m.id}, this.value)"> <span style="cursor:pointer;" onclick="renameMNT(${m.id})" title="Cliquez pour renommer">${m.name.substring(0,18)}</span></div><button class="btn-del" onclick="deleteMNT(${m.id})">✕</button></div><div style="margin-top:5px; font-size: 0.9em;">Épaisseur : <input type="range" min="1" max="10" value="${m.weight}" class="slider-width" onchange="changeMntWeight(${m.id}, this.value)"></div></div>`;
     });
 }
+
+// Nouvelle fonction pour renommer le MNT
+window.renameMNT = (id) => { 
+    const m = mntStore.find(x => x.id === id); 
+    if (!m) return; 
+    const newName = prompt("Nouveau nom pour ce secteur :", m.name); 
+    if (newName && newName.trim() !== "") { 
+        m.name = newName.trim(); 
+        updateMntUI(); 
+    } 
+};
 
 // --- Fonctions 4 : Contrôles visuels (Couleurs, Épaisseur, Masquage) ---
 window.changeMntColor = (id, color) => { const m = mntStore.find(x => x.id === id); if (!m) return; m.color = color; m.visual.setStyle({ color: color }); updateMntUI(); };

@@ -1,3 +1,4 @@
+main.js
 // ==========================================
 // 1. CONFIGURATION ET FONDS DE CARTE
 // ==========================================
@@ -12,9 +13,11 @@ const topoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', 
 satellite.addTo(map);
 L.control.layers({ "🌍 Satellite": satellite, "🗺️ Plan": planOSM, "⛰️ Topographie": topoMap }).addTo(map);
 
+// Variables globales
 let mntStore = [];
 let drawStore = [];
 let kmzStore = []; 
+let projectStore = []; // <-- Variable ajoutée pour les projets sauvegardés
 let currentPoints = [];
 let tempLayer = null;
 let currentTool = null;
@@ -26,23 +29,16 @@ let currentProfileDrawId = null;
 // ==========================================
 // 2. IMPORTATION MNT (LOCAL ET SERVEUR)
 // ==========================================
-
-// --- Fonction 1 : Téléchargement depuis GitHub ---
 window.loadRemoteMNT = async () => {
     const select = document.getElementById('mnt-select');
     const url = select.value;
     const name = select.options[select.selectedIndex].text;
 
-    if (!url) {
-        alert("Veuillez sélectionner un MNT dans la liste déroulante.");
-        return;
-    }
+    if (!url) return alert("Veuillez sélectionner un MNT dans la liste déroulante.");
 
     const btn = document.querySelector('button[onclick="loadRemoteMNT()"]');
     const oldText = btn.innerText;
-    btn.innerText = "⏳ Téléchargement en cours...";
-    btn.style.background = "#f39c12"; 
-    btn.disabled = true;
+    btn.innerText = "⏳ Téléchargement..."; btn.style.background = "#f39c12"; btn.disabled = true;
 
     try {
         const response = await fetch(url);
@@ -57,30 +53,19 @@ window.loadRemoteMNT = async () => {
         const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
         const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
         
-        const defaultColor = "#00d1b2";
-        const defaultWeight = 2;
-        
-        const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { 
-            color: defaultColor, weight: defaultWeight, fillOpacity: 0.15 
-        }).addTo(map);
+        const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { color: "#00d1b2", weight: 2, fillOpacity: 0.15 }).addTo(map);
 
-        mntStore.push({ 
-            id: Date.now()+Math.random(), name: name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true, color: defaultColor, weight: defaultWeight
-        });
+        mntStore.push({ id: Date.now()+Math.random(), name: name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true, color: "#00d1b2", weight: 2 });
         
         map.fitBounds(visual.getBounds());
         updateMntUI();
     } catch(err) { 
-        console.error(err);
-        alert("Impossible de charger le MNT. Vérifiez le lien GitHub.");
+        console.error(err); alert("Impossible de charger le MNT. Vérifiez le lien GitHub.");
     } finally {
-        btn.innerText = oldText;
-        btn.style.background = "#00d1b2";
-        btn.disabled = false;
+        btn.innerText = oldText; btn.style.background = "#00d1b2"; btn.disabled = false;
     }
 };
 
-// --- Fonction 2 : Importation d'un fichier local ---
 document.getElementById('mnt-input').onchange = async (e) => {
     for (const file of e.target.files) {
         if (!file.name.match(/\.(tif|tiff)$/i)) continue;
@@ -94,40 +79,23 @@ document.getElementById('mnt-input').onchange = async (e) => {
             const sw = proj4("EPSG:2154", "EPSG:4326", [bbox[0], bbox[1]]);
             const ne = proj4("EPSG:2154", "EPSG:4326", [bbox[2], bbox[3]]);
             
-            const defaultColor = "#00d1b2";
-            const defaultWeight = 2;
-            
-            const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { color: defaultColor, weight: defaultWeight, fillOpacity: 0.15 }).addTo(map);
+            const visual = L.rectangle([[sw[1], sw[0]], [ne[1], ne[0]]], { color: "#00d1b2", weight: 2, fillOpacity: 0.15 }).addTo(map);
 
-            mntStore.push({ id: Date.now()+Math.random(), name: file.name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true, color: defaultColor, weight: defaultWeight });
+            mntStore.push({ id: Date.now()+Math.random(), name: file.name, bbox, width: image.getWidth(), height: image.getHeight(), data: raster[0], visual, visible: true, color: "#00d1b2", weight: 2 });
             map.fitBounds(visual.getBounds());
         } catch(err) { console.error("Erreur MNT :", err); }
     }
     updateMntUI();
 };
 
-// --- Fonction 3 : Mise à jour de l'interface ---
 function updateMntUI() {
-    const list = document.getElementById('mnt-list');
-    if (!list) return;
-    list.innerHTML = '';
+    const list = document.getElementById('mnt-list'); if (!list) return; list.innerHTML = '';
     mntStore.forEach(m => {
         list.innerHTML += `<div class="card" style="border-left-color: ${m.color}"><div class="card-header"><div><input type="checkbox" ${m.visible ? 'checked' : ''} onchange="toggleMNT(${m.id})"> <input type="color" class="color-picker" value="${m.color}" onchange="changeMntColor(${m.id}, this.value)"> <span style="cursor:pointer;" onclick="renameMNT(${m.id})" title="Cliquez pour renommer">${m.name.substring(0,18)}</span></div><button class="btn-del" onclick="deleteMNT(${m.id})">✕</button></div><div style="margin-top:5px; font-size: 0.9em;">Épaisseur : <input type="range" min="1" max="10" value="${m.weight}" class="slider-width" onchange="changeMntWeight(${m.id}, this.value)"></div></div>`;
     });
 }
 
-// Nouvelle fonction pour renommer le MNT
-window.renameMNT = (id) => { 
-    const m = mntStore.find(x => x.id === id); 
-    if (!m) return; 
-    const newName = prompt("Nouveau nom pour ce secteur :", m.name); 
-    if (newName && newName.trim() !== "") { 
-        m.name = newName.trim(); 
-        updateMntUI(); 
-    } 
-};
-
-// --- Fonctions 4 : Contrôles visuels (Couleurs, Épaisseur, Masquage) ---
+window.renameMNT = (id) => { const m = mntStore.find(x => x.id === id); if (!m) return; const newName = prompt("Nouveau nom pour ce secteur :", m.name); if (newName && newName.trim() !== "") { m.name = newName.trim(); updateMntUI(); } };
 window.changeMntColor = (id, color) => { const m = mntStore.find(x => x.id === id); if (!m) return; m.color = color; m.visual.setStyle({ color: color }); updateMntUI(); };
 window.changeMntWeight = (id, weight) => { const m = mntStore.find(x => x.id === id); if (!m) return; m.weight = parseInt(weight); m.visual.setStyle({ weight: m.weight }); updateMntUI(); };
 window.toggleMNT = (id) => { const m = mntStore.find(x => x.id === id); m.visible = !m.visible; if (m.visible) m.visual.addTo(map); else map.removeLayer(m.visual); };
@@ -149,19 +117,18 @@ function getZ(l93) {
         }
     } return null;
 }
+
 // ==========================================
 // 3. GESTION DE L'INTERFACE DES CALQUES
 // ==========================================
 function updateKmzUI() {
-    const list = document.getElementById('kmz-list'); 
-    if (!list) return; // Sécurité anti-bug
-    list.innerHTML = '';
-    
+    const list = document.getElementById('kmz-list'); if (!list) return; list.innerHTML = '';
     kmzStore.forEach(k => {
-        list.innerHTML += `<div class="card" style="border-left-color: ${k.color}"><div class="card-header"><div><input type="checkbox" ${k.visible ? 'checked' : ''} onchange="toggleKMZ(${k.id})"> <input type="color" class="color-picker" value="${k.color}" onchange="changeKmzColor(${k.id}, this.value)"> <span>${k.name.substring(0,15)}</span></div><button class="btn-del" onclick="deleteKMZ(${k.id})">✕</button></div><div style="margin-top:5px; font-size: 0.9em;">Épaisseur : <input type="range" min="1" max="10" value="${k.weight}" class="slider-width" onchange="changeKmzWeight(${k.id}, this.value)"></div></div>`;
+        list.innerHTML += `<div class="card" style="border-left-color: ${k.color}"><div class="card-header"><div><input type="checkbox" ${k.visible ? 'checked' : ''} onchange="toggleKMZ(${k.id})"> <input type="color" class="color-picker" value="${k.color}" onchange="changeKmzColor(${k.id}, this.value)"> <span style="cursor:pointer;" onclick="renameKMZ(${k.id})" title="Cliquez pour renommer">${k.name.substring(0,18)}</span></div><button class="btn-del" onclick="deleteKMZ(${k.id})">✕</button></div><div style="margin-top:5px; font-size: 0.9em;">Épaisseur : <input type="range" min="1" max="10" value="${k.weight}" class="slider-width" onchange="changeKmzWeight(${k.id}, this.value)"></div></div>`;
     });
 }
 
+window.renameKMZ = (id) => { const k = kmzStore.find(x => x.id === id); if (!k) return; const newName = prompt("Nouveau nom pour ce calque :", k.name); if (newName && newName.trim() !== "") { k.name = newName.trim(); updateKmzUI(); } };
 window.toggleKMZ = (id) => { const k = kmzStore.find(x => x.id === id); k.visible = !k.visible; if (k.visible) k.layer.addTo(map); else map.removeLayer(k.layer); };
 window.deleteKMZ = (id) => { const k = kmzStore.find(x => x.id === id); map.removeLayer(k.layer); kmzStore = kmzStore.filter(x => x.id !== id); updateKmzUI(); };
 window.changeKmzColor = (id, color) => { const k = kmzStore.find(x => x.id === id); k.color = color; applyKmzStyle(id); updateKmzUI(); };
@@ -174,6 +141,7 @@ function applyKmzStyle(id) {
         else if (l.setStyle) { l.setStyle({ color: k.color, weight: k.weight }); }
     });
 }
+
 // ==========================================
 // 4. OUTILS DE TRACÉ
 // ==========================================
@@ -183,8 +151,7 @@ window.startTool = (tool) => {
     document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
     document.getElementById('btn-' + tool).classList.add('active');
     const finishBtn = document.getElementById('btn-finish'); 
-    const activeBtn = document.getElementById('btn-' + tool);
-    activeBtn.insertAdjacentElement('afterend', finishBtn);
+    document.getElementById('btn-' + tool).insertAdjacentElement('afterend', finishBtn);
     finishBtn.style.display = 'block';
 };
 
@@ -200,24 +167,32 @@ window.finalizeDraw = () => {
     if (!currentTool || currentPoints.length < 2) { alert("Veuillez placer au moins 2 points."); return; }
     try {
         const type = currentTool; const color = type === 'area' ? '#e67e22' : '#3498db';
-        const layer = type === 'area' ? L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map) : L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
+        const weight = type === 'area' ? 3 : 4; // Épaisseur par défaut
+        
+        const layer = type === 'area' ? L.polygon(currentPoints, { color, weight, fillOpacity: 0.3 }).addTo(map) : L.polyline(currentPoints, { color, weight }).addTo(map);
         if (tempLayer) map.removeLayer(tempLayer); tempLayer = null;
         
-        // On donne un nom par défaut selon l'outil utilisé
         const defaultName = type === 'line' ? 'Mon Parcours' : 'Ma Surface';
+        const drawObj = { 
+            id: Date.now(), type, name: defaultName, layer, ptsGPS: [...currentPoints], 
+            visible: true, color, weight, isEditing: false, editGroup: L.layerGroup().addTo(map) 
+        };
         
-        const drawObj = { id: Date.now(), type, name: defaultName, layer, ptsGPS: [...currentPoints], visible: true, color, editGroup: L.layerGroup().addTo(map) };
-        drawStore.push(drawObj); recalculateStats(drawObj); makeEditable(drawObj);
+        drawStore.push(drawObj); 
+        recalculateStats(drawObj); 
+        // Note : On ne lance plus makeEditable(drawObj) ici !
         
         if (type === 'line') { currentProfileDrawId = drawObj.id; generateProfile(drawObj); } 
         currentTool = null; currentPoints = [];
         document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
         document.getElementById('btn-finish').style.display = 'none';
+        
+        updateDrawUI(); // Met à jour le menu de droite
     } catch (e) { console.error(e); }
 };
 
 // ==========================================
-// 5. CALCULS ET ÉDITION LIVE
+// 5. CALCULS, ÉDITION LIVE ET VOLUMES 3D
 // ==========================================
 function recalculateStats(d) {
     const l93 = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
@@ -226,60 +201,231 @@ function recalculateStats(d) {
         for (let i = 1; i < l93.length; i++) dist += Math.hypot(l93[i][0]-l93[i-1][0], l93[i][1]-l93[i-1][1]);
         const z1 = getZ(l93[0]) || 0; const z2 = getZ(l93[l93.length-1]) || 0;
         const dz = Math.abs(z2 - z1); const pente = dist > 0 ? (dz / dist * 100).toFixed(1) : 0;
-        d.totalDist = dist; d.statsHtml = `Dist: <b>${dist.toFixed(1)} m</b> | ΔZ: <b>${dz.toFixed(1)} m</b> | Pente Moy: <b>${pente}%</b>`;
+        d.totalDist = dist; d.statsHtml = `Dist: <b>${dist.toFixed(1)} m</b> | ΔZ: <b>${dz.toFixed(1)} m</b> | Pente: <b>${pente}%</b>`;
     } else {
         let area = 0;
         for (let i = 0; i < l93.length; i++) { let j = (i+1) % l93.length; area += l93[i][0]*l93[j][1] - l93[j][0]*l93[i][1]; }
         d.statsHtml = `Surface: <b>${(Math.abs(area)/2).toFixed(1)} m²</b>`;
     }
-    const statsDiv = document.getElementById(`stats-${d.id}`); if (statsDiv) statsDiv.innerHTML = d.statsHtml; else updateDrawUI();
+    const statsDiv = document.getElementById(`stats-${d.id}`); if (statsDiv) statsDiv.innerHTML = d.statsHtml;
 }
 
 function updateDrawUI() {
-    const list = document.getElementById('measure-list'); 
-    if (!list) return;
-    list.innerHTML = '';
+    const list = document.getElementById('measure-list'); if (!list) return; list.innerHTML = '';
     drawStore.forEach(d => {
-        // On remplace le titre fixe par le nom cliquable (d.name)
-        list.innerHTML += `<div class="card" style="border-left-color: ${d.color}"><div class="card-header"><div><input type="checkbox" ${d.visible ? 'checked' : ''} onchange="toggleDraw(${d.id})"> <input type="color" class="color-picker" value="${d.color}" onchange="changeColor(${d.id}, this.value)"> <strong style="cursor:pointer;" onclick="renameDraw(${d.id})" title="Cliquez pour renommer">${d.name}</strong></div><button class="btn-del" onclick="deleteDraw(${d.id})">✕</button></div><div id="stats-${d.id}" style="margin-top:5px; font-size:1.1em;">${d.statsHtml}</div>${d.type === 'line' ? `<button onclick="generateProfileById(${d.id})" style="width:100%; margin-top:8px; font-size:0.8em; cursor:pointer; background:#333; color:white; border:1px solid #555; padding:5px; border-radius:3px;">Afficher le profil</button>` : ''}</div>`;
+        let actionButtons = '';
+        if (d.type === 'line') {
+            actionButtons = `<button onclick="generateProfileById(${d.id})" style="width:100%; margin-top:8px; font-size:0.8em; cursor:pointer; background:#333; color:white; border:1px solid #555; padding:5px; border-radius:3px;">📈 Afficher le profil</button>`;
+        } else {
+            actionButtons = `
+            <div style="display:flex; gap:5px; margin-top:8px; flex-wrap:wrap;">
+                <button id="btn-vol-hollow-${d.id}" onclick="calculateVolume(${d.id}, 'hollow')" style="flex:1; font-size:0.7em; cursor:pointer; background:#2980b9; color:white; border:none; padding:4px; border-radius:3px;">💧 Creux</button>
+                <button id="btn-vol-mound-${d.id}" onclick="calculateVolume(${d.id}, 'mound')" style="flex:1; font-size:0.7em; cursor:pointer; background:#e67e22; color:white; border:none; padding:4px; border-radius:3px;">⛰️ Tas</button>
+                <button id="btn-vol-slope-${d.id}" onclick="calculateVolume(${d.id}, 'slope')" style="flex:1; font-size:0.75em; cursor:pointer; background:#8e44ad; color:white; border:none; padding:4px; border-radius:3px;">📐 Pente (Auto)</button>
+                <button onclick="generate3DView(${d.id})" style="flex:1; min-width:100%; font-size:0.75em; cursor:pointer; background:#34495e; color:white; border:1px solid #555; padding:5px; border-radius:3px; margin-top:2px;">👁️ Contrôle Vue 3D</button>
+            </div>`;
+        }
+
+        const editBtnText = d.isEditing ? '✅ Fin édition' : '✏️ Éditer';
+        const editControls = d.isEditing ? `<div style="margin-top:5px; font-size:0.85em; background:#222; padding:5px; border-radius:3px; display:flex; align-items:center; gap:5px;">Épaisseur: <input type="range" min="1" max="10" value="${d.weight}" onchange="changeFeatureWeight(${d.id}, this.value, false)"></div>` : '';
+
+        list.innerHTML += `
+        <div class="card" style="border-left-color: ${d.color}">
+            <div class="card-header">
+                <div style="display:flex; align-items:center;">
+                    <input type="checkbox" ${d.visible ? 'checked' : ''} onchange="toggleDraw(${d.id})"> 
+                    <input type="color" class="color-picker" value="${d.color}" onchange="changeColor(${d.id}, this.value)"> 
+                    <strong style="cursor:pointer;" onclick="renameDraw(${d.id})" title="Cliquez pour renommer">${d.name}</strong>
+                    <button onclick="toggleEditMode(${d.id}, false)" style="background:${d.isEditing?'#27ae60':'#7f8c8d'}; color:white; border:none; border-radius:3px; padding:2px 5px; cursor:pointer; font-size:0.7em; margin-left:5px;">${editBtnText}</button>
+                </div>
+                <button class="btn-del" onclick="deleteDraw(${d.id})">✕</button>
+            </div>
+            ${editControls}
+            <div id="stats-${d.id}" style="margin-top:5px; font-size:1.1em;">${d.statsHtml}</div>
+            ${actionButtons}
+        </div>`;
     });
 }
 
-// Nouvelle fonction pour renommer les tracés et surfaces à droite
-window.renameDraw = (id) => { 
-    const d = drawStore.find(x => x.id === id); 
-    if (!d) return; 
-    const newName = prompt("Nouveau nom pour ce tracé :", d.name); 
-    if (newName && newName.trim() !== "") { 
-        d.name = newName.trim(); 
-        updateDrawUI(); 
-    } 
+// --- NOUVEAU : GESTION DE L'ÉDITION ---
+window.toggleEditMode = (id, isProject = false, projectId = null) => {
+    let d = isProject ? projectStore.find(p => p.id === projectId)?.features.find(f => f.id === id) : drawStore.find(x => x.id === id);
+    if (!d) return;
+
+    d.isEditing = !d.isEditing;
+    if (!d.editGroup) d.editGroup = L.layerGroup().addTo(map);
+
+    if (d.isEditing && d.visible) { makeEditable(d, isProject, projectId); } 
+    else { d.editGroup.clearLayers(); }
+
+    if (isProject) updateProjectUI(); else updateDrawUI();
 };
-function makeEditable(d) {
-    d.editGroup.clearLayers(); if (!d.visible) return;
+
+window.changeFeatureWeight = (id, weight, isProject = false, projectId = null) => {
+    let d = isProject ? projectStore.find(p => p.id === projectId)?.features.find(f => f.id === id) : drawStore.find(x => x.id === id);
+    if (!d) return;
+    d.weight = parseInt(weight);
+    d.layer.setStyle({ weight: d.weight });
+};
+
+function makeEditable(d, isProject = false, projectId = null) {
+    if(d.editGroup) d.editGroup.clearLayers(); 
+    if (!d.visible || !d.isEditing) return;
     const icon = L.divIcon({ className: 'edit-handle', iconSize: [12, 12] });
     d.ptsGPS.forEach((pt, idx) => {
         const marker = L.marker(pt, { icon, draggable: true }).addTo(d.editGroup);
-        marker.on('drag', (e) => {
-            d.ptsGPS[idx] = e.latlng; d.layer.setLatLngs(d.ptsGPS); recalculateStats(d);
-            if (d.type === 'line') generateProfile(d);
+        marker.on('drag', (e) => { 
+            d.ptsGPS[idx] = e.latlng; d.layer.setLatLngs(d.ptsGPS); 
+            recalculateStats(d); 
+            if (d.type === 'line') generateProfile(d); 
         });
+        marker.on('dragend', () => { if (isProject) updateProjectUI(); else updateDrawUI(); });
     });
 }
 
-window.toggleDraw = (id) => { const d = drawStore.find(x => x.id === id); d.visible = !d.visible; if (d.visible) { d.layer.addTo(map); makeEditable(d); } else { map.removeLayer(d.layer); d.editGroup.clearLayers(); } };
+window.renameDraw = (id) => { const d = drawStore.find(x => x.id === id); if (!d) return; const newName = prompt("Nouveau nom :", d.name); if (newName && newName.trim() !== "") { d.name = newName.trim(); updateDrawUI(); } };
+window.toggleDraw = (id) => { const d = drawStore.find(x => x.id === id); d.visible = !d.visible; if (d.visible) { d.layer.addTo(map); if(d.isEditing) makeEditable(d); } else { map.removeLayer(d.layer); if(d.editGroup) d.editGroup.clearLayers(); } updateDrawUI(); };
+window.changeColor = (id, color) => { const d = drawStore.find(x => x.id === id); if (!d) return; d.color = color; d.layer.setStyle({ color: color }); updateDrawUI(); if (chartInstance && currentProfileDrawId === id) { chartInstance.data.datasets[0].borderColor = color; chartInstance.data.datasets[0].backgroundColor = color + '33'; chartInstance.update(); } };
+window.deleteDraw = (id) => { const d = drawStore.find(x => x.id === id); map.removeLayer(d.layer); if(d.editGroup) map.removeLayer(d.editGroup); drawStore = drawStore.filter(x => x.id !== id); updateDrawUI(); if(currentProfileDrawId === id) { document.getElementById('profile-window').style.display = 'none'; currentProfileDrawId = null; } };
 
-window.changeColor = (id, color) => {
-    const d = drawStore.find(x => x.id === id); if (!d) return;
-    d.color = color; d.layer.setStyle({ color: color }); updateDrawUI();
-    if (chartInstance && currentProfileDrawId === id) {
-        chartInstance.data.datasets[0].borderColor = color;
-        chartInstance.data.datasets[0].backgroundColor = color + '33';
-        chartInstance.update();
+// --- CALCUL DE VOLUME ---
+window.calculateVolume = (id, type) => {
+    const d = drawStore.find(x => x.id === id);
+    if (!d || d.type !== 'area') return;
+    if (mntStore.filter(m => m.visible).length === 0) return alert("Activez un MNT !");
+
+    const l93Pts = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    l93Pts.forEach(p => { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; });
+
+    let refZ = 0, borderPtsWithZ = [];
+    if (type === 'slope') {
+        l93Pts.forEach(p => { let z = getZ(p); if (z !== null) borderPtsWithZ.push({ x: p[0], y: p[1], z: z }); });
+        if (borderPtsWithZ.length < 3) return alert("Pas assez de données sur les bords.");
+    } else {
+        let sampleZ = getZ(l93Pts[0]), defaultZ = sampleZ ? Math.round(sampleZ) : 0;
+        let refZPrompt = prompt("Altitude de référence (Z) en mètres ?", defaultZ);
+        if (!refZPrompt) return; refZ = parseFloat(refZPrompt.replace(',', '.')); if (isNaN(refZ)) return alert("Altitude invalide.");
     }
+
+    const btn = document.getElementById(`btn-vol-${type}-${id}`);
+    const oldText = btn.innerText; btn.innerText = "⏳ Scan..."; btn.disabled = true;
+
+    setTimeout(() => {
+        let totalVolumeTas = 0, totalVolumeCreux = 0, step = 1, pixelArea = step * step, pointsCount = 0;
+        for (let x = minX; x <= maxX; x += step) {
+            for (let y = minY; y <= maxY; y += step) {
+                if (isPointInPolygon([x, y], l93Pts)) {
+                    let zMNT = getZ([x, y]);
+                    if (zMNT !== null) {
+                        pointsCount++;
+                        if (type === 'slope') {
+                            let sumZ = 0, sumW = 0, exactMatch = false, zBase = 0;
+                            for (let pt of borderPtsWithZ) { let d2 = (x - pt.x)**2 + (y - pt.y)**2; if (d2 === 0) { zBase = pt.z; exactMatch = true; break; } let w = 1 / d2; sumZ += pt.z * w; sumW += w; }
+                            if (!exactMatch) zBase = sumZ / sumW;
+                            if (zMNT > zBase) totalVolumeTas += (zMNT - zBase) * pixelArea; else if (zMNT < zBase) totalVolumeCreux += (zBase - zMNT) * pixelArea;
+                        } else {
+                            if (type === 'hollow' && zMNT < refZ) totalVolumeCreux += (refZ - zMNT) * pixelArea; else if (type === 'mound' && zMNT > refZ) totalVolumeTas += (zMNT - refZ) * pixelArea;
+                        }
+                    }
+                }
+            }
+        }
+        btn.innerText = oldText; btn.disabled = false;
+        if (pointsCount === 0) alert("Aucune donnée MNT dans cette zone.");
+        else {
+            let msg = "", resultHtml = "";
+            if (type === 'slope') {
+                const tasStr = totalVolumeTas.toLocaleString('fr-FR', {maximumFractionDigits:1}), creuxStr = totalVolumeCreux.toLocaleString('fr-FR', {maximumFractionDigits:1});
+                msg = `📐 Bilan sur pente:\n\n⛰️ Tas : ${tasStr} m³\n💧 Creux : ${creuxStr} m³`;
+                resultHtml = `<br><span style="color:#8e44ad; font-size:0.9em; display:block; margin-top:3px;">Tas (Pente): <b>${tasStr} m³</b> | Creux: <b>${creuxStr} m³</b></span>`;
+            } else {
+                let vol = type === 'hollow' ? totalVolumeCreux : totalVolumeTas, volStr = vol.toLocaleString('fr-FR', {maximumFractionDigits:1});
+                msg = type === 'hollow' ? `💧 Creux (sous ${refZ}m) : ${volStr} m³` : `⛰️ Tas (sur ${refZ}m) : ${volStr} m³`;
+                resultHtml = `<br><span style="color:${type==='hollow'?'#2980b9':'#e67e22'}; font-size:0.9em; display:block; margin-top:3px;">${type==='hollow'?'Vol. Creux':'Vol. Tas'} (${refZ}m): <b>${volStr} m³</b></span>`;
+            }
+            alert(msg); d.statsHtml += resultHtml;
+            const statsDiv = document.getElementById(`stats-${d.id}`); if (statsDiv) statsDiv.innerHTML = d.statsHtml;
+        }
+    }, 50);
 };
 
-window.deleteDraw = (id) => { const d = drawStore.find(x => x.id === id); map.removeLayer(d.layer); map.removeLayer(d.editGroup); drawStore = drawStore.filter(x => x.id !== id); updateDrawUI(); document.getElementById('profile-window').style.display = 'none'; if(currentProfileDrawId === id) currentProfileDrawId = null; };
+function isPointInPolygon(point, vs) {
+    let x = point[0], y = point[1], inside = false;
+    for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) { let xi = vs[i][0], yi = vs[i][1], xj = vs[j][0], yj = vs[j][1]; let intersect = ((yi > y) != (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi); if (intersect) inside = !inside; } return inside;
+}
+
+// --- GÉNÉRATION DE LA VUE 3D (AVEC SUIVI SOURIS) ---
+window.generate3DView = (id) => {
+    const d = drawStore.find(x => x.id === id);
+    if (!d || d.type !== 'area') return;
+    if (mntStore.filter(m => m.visible).length === 0) return alert("Activez un MNT !");
+
+    document.getElementById('window-3d').style.display = 'block';
+    document.getElementById('plot-3d').innerHTML = '<h3 style="color:white; text-align:center; margin-top:20%;">Calcul de la 3D en cours... ⏳</h3>';
+
+    setTimeout(() => {
+        const l93Pts = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        l93Pts.forEach(p => { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; });
+
+        let borderPtsWithZ = [];
+        l93Pts.forEach(p => { let z = getZ(p); if (z !== null) borderPtsWithZ.push({ x: p[0], y: p[1], z: z }); });
+
+        const maxPts = 40;
+        const step = Math.max(1, (maxX - minX) / maxPts, (maxY - minY) / maxPts);
+
+        let xVals = [], yVals = [], zTerrain = [], zRefPlane = [];
+        for (let x = minX; x <= maxX; x += step) xVals.push(x);
+
+        for (let y = minY; y <= maxY; y += step) {
+            let rowTerrain = [], rowRef = [];
+            yVals.push(y);
+            for (let x = minX; x <= maxX; x += step) {
+                if (isPointInPolygon([x, y], l93Pts)) {
+                    let zMNT = getZ([x, y]);
+                    rowTerrain.push(zMNT !== null ? zMNT : null);
+
+                    let sumZ = 0, sumW = 0, exactMatch = false, zBase = 0;
+                    for (let pt of borderPtsWithZ) { let d2 = (x - pt.x)**2 + (y - pt.y)**2; if (d2 === 0) { zBase = pt.z; exactMatch = true; break; } let w = 1 / d2; sumZ += pt.z * w; sumW += w; }
+                    if (!exactMatch) zBase = sumZ / sumW;
+                    rowRef.push(zBase);
+                } else { rowTerrain.push(null); rowRef.push(null); }
+            }
+            zTerrain.push(rowTerrain); zRefPlane.push(rowRef);
+        }
+
+        const traceTerrain = { z: zTerrain, x: xVals, y: yVals, type: 'surface', name: 'Terrain Naturel', colorscale: 'Earth', showscale: false };
+        const traceRef = { z: zRefPlane, x: xVals, y: yVals, type: 'surface', name: 'Base Calculée', colorscale: 'Blues', showscale: false, opacity: 0.6 };
+
+        const layout = { margin: { l: 0, r: 0, b: 0, t: 0 }, scene: { aspectmode: 'data', camera: { eye: {x: -1.2, y: -1.2, z: 1.2} } }, paper_bgcolor: '#222', font: { color: 'white' }, hovermode: 'closest' };
+        
+        Plotly.newPlot('plot-3d', [traceTerrain, traceRef], layout).then(() => {
+            const plotDiv = document.getElementById('plot-3d');
+            plotDiv.on('plotly_hover', (data) => {
+                if (data.points.length > 0) {
+                    const pt = data.points[0]; const gps = proj4("EPSG:2154", "EPSG:4326", [pt.x, pt.y]);
+                    if (!cursorMarker) cursorMarker = L.circleMarker([gps[1], gps[0]], { radius: 6, color: 'red', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
+                    else cursorMarker.setLatLng([gps[1], gps[0]]);
+                }
+            });
+            plotDiv.addEventListener('mouseleave', () => { if (cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; } });
+        });
+    }, 100);
+};
+
+// Fixer le bouton de fermeture 3D
+document.querySelector('#header-3d button').onclick = () => {
+    document.getElementById('window-3d').style.display = 'none';
+    if (cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; }
+};
+
+// Drag & Drop Vue 3D
+const win3d = document.getElementById('window-3d'), header3d = document.getElementById('header-3d');
+let isDragging3D = false, offset3DX = 0, offset3DY = 0;
+header3d.addEventListener('mousedown', (e) => { if (e.target.tagName === 'BUTTON') return; isDragging3D = true; const rect = win3d.getBoundingClientRect(); offset3DX = e.clientX - rect.left; offset3DY = e.clientY - rect.top; });
+document.addEventListener('mousemove', (e) => { if (!isDragging3D) return; win3d.style.left = Math.max(0, e.clientX - offset3DX) + 'px'; win3d.style.top = Math.max(0, e.clientY - offset3DY) + 'px'; });
+document.addEventListener('mouseup', () => { isDragging3D = false; });
 
 // ==========================================
 // 6. PROFIL ALTIMÉTRIQUE HAUTE PRÉCISION
@@ -292,13 +438,9 @@ function generateProfile(d) {
     
     const l93Pts = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
     let cumulativeDistances = [0]; let totalDist = 0;
-    for (let i = 1; i < l93Pts.length; i++) {
-        totalDist += Math.hypot(l93Pts[i][0]-l93Pts[i-1][0], l93Pts[i][1]-l93Pts[i-1][1]);
-        cumulativeDistances.push(totalDist);
-    }
+    for (let i = 1; i < l93Pts.length; i++) { totalDist += Math.hypot(l93Pts[i][0]-l93Pts[i-1][0], l93Pts[i][1]-l93Pts[i-1][1]); cumulativeDistances.push(totalDist); }
 
-    let chartData = []; let geoRef = []; currentProfileExportData = []; 
-    const samplingInterval = 1; 
+    let chartData = []; let geoRef = []; currentProfileExportData = []; const samplingInterval = 1; 
 
     let zStart = getZ(l93Pts[0]) || 0;
     addPointToChart(0, zStart, [l93Pts[0][0], l93Pts[0][1]]);
@@ -309,33 +451,26 @@ function generateProfile(d) {
         const p1 = l93Pts[i-1]; const p2 = l93Pts[i];
 
         while (nextSampleDist < cumulativeDistances[i]) {
-            const distInSeg = nextSampleDist - cumulativeDistances[i-1];
-            const t = segLen === 0 ? 0 : distInSeg / segLen;
-            const x = p1[0] + (p2[0] - p1[0]) * t;
-            const y = p1[1] + (p2[1] - p1[1]) * t;
-            const z = getZ([x, y]) || 0;
-            addPointToChart(nextSampleDist, z, [x, y]);
+            const t = segLen === 0 ? 0 : (nextSampleDist - cumulativeDistances[i-1]) / segLen;
+            const x = p1[0] + (p2[0] - p1[0]) * t, y = p1[1] + (p2[1] - p1[1]) * t;
+            addPointToChart(nextSampleDist, getZ([x, y]) || 0, [x, y]);
             nextSampleDist += samplingInterval;
         }
-
-        let zReal = getZ(l93Pts[i]) || 0;
         if (Math.abs(cumulativeDistances[i] - (nextSampleDist - samplingInterval)) > 0.1) {
-             addPointToChart(cumulativeDistances[i], zReal, [l93Pts[i][0], l93Pts[i][1]]);
+             addPointToChart(cumulativeDistances[i], getZ(l93Pts[i]) || 0, [l93Pts[i][0], l93Pts[i][1]]);
         }
     }
 
     function addPointToChart(dist, z, l93Coords) {
         chartData.push({ x: parseFloat(dist.toFixed(1)), y: parseFloat(z.toFixed(2)) }); 
-        const gps = proj4("EPSG:2154", "EPSG:4326", l93Coords);
-        geoRef.push(gps);
+        geoRef.push(proj4("EPSG:2154", "EPSG:4326", l93Coords));
         currentProfileExportData.push({ dist: dist.toFixed(2), z: z.toFixed(2) });
     }
 
     if (chartInstance) chartInstance.destroy();
     
     chartInstance = new Chart(ctx, {
-        type: 'line',
-        data: { datasets: [{ label: 'Altitude Z (m)', data: chartData, borderColor: d.color, backgroundColor: d.color + '33', fill: true, pointRadius: 0, tension: 0.1 }] },
+        type: 'line', data: { datasets: [{ label: 'Altitude Z (m)', data: chartData, borderColor: d.color, backgroundColor: d.color + '33', fill: true, pointRadius: 0, tension: 0.1 }] },
         options: {
             responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
             scales: { x: { type: 'linear', title: { display: true, text: 'Distance totale (m)' }, ticks: { precision: 0 } }, y: { title: { display: true, text: 'Altitude Z (m)' } } },
@@ -351,20 +486,17 @@ function generateProfile(d) {
 
     document.getElementById('profileChart').onmouseleave = () => { if (cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; } };
 
-    const xMinSlider = document.getElementById('x-min'); const xMaxSlider = document.getElementById('x-max');
-    const yMinSlider = document.getElementById('y-min'); const yMaxSlider = document.getElementById('y-max');
+    const xMinSlider = document.getElementById('x-min'), xMaxSlider = document.getElementById('x-max');
+    const yMinSlider = document.getElementById('y-min'), yMaxSlider = document.getElementById('y-max');
 
-    let minZ = Math.min(...chartData.map(pt => pt.y)); let maxZ = Math.max(...chartData.map(pt => pt.y));
-    const zMargin = (maxZ - minZ) * 0.1 || 10;
-    minZ = Math.floor(minZ - zMargin); maxZ = Math.ceil(maxZ + zMargin);
+    let minZ = Math.min(...chartData.map(pt => pt.y)), maxZ = Math.max(...chartData.map(pt => pt.y));
+    const zMargin = (maxZ - minZ) * 0.1 || 10; minZ = Math.floor(minZ - zMargin); maxZ = Math.ceil(maxZ + zMargin);
 
     if(xMinSlider && xMaxSlider && yMinSlider && yMaxSlider) {
         xMinSlider.min = 0; xMinSlider.max = d.totalDist; xMinSlider.value = 0; xMinSlider.step = d.totalDist / 200 || 1;
         xMaxSlider.min = 0; xMaxSlider.max = d.totalDist; xMaxSlider.value = d.totalDist; xMaxSlider.step = d.totalDist / 200 || 1;
-
         yMinSlider.min = minZ; yMinSlider.max = maxZ; yMinSlider.value = minZ; yMinSlider.step = 0.5;
         yMaxSlider.min = minZ; yMaxSlider.max = maxZ; yMaxSlider.value = maxZ; yMaxSlider.step = 0.5;
-        
         document.getElementById('x-vals').innerText = `0m - ${d.totalDist.toFixed(0)}m`;
         document.getElementById('y-vals').innerText = `${minZ}m - ${maxZ}m`;
     }
@@ -372,10 +504,8 @@ function generateProfile(d) {
 
 window.exportChartPNG = () => { const a = document.createElement('a'); a.href = document.getElementById('profileChart').toDataURL('image/png'); a.download = 'profil.png'; a.click(); };
 window.exportChartCSV = () => {
-    let csv = "\ufeffDistance (m)\tAltitude Z (m)\n";
-    currentProfileExportData.forEach(row => { csv += `${row.dist.replace('.', ',')}\t${row.z.replace('.', ',')}\n`; });
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'export_profil_1m.csv'; a.click();
+    let csv = "\ufeffDistance (m)\tAltitude Z (m)\n"; currentProfileExportData.forEach(row => { csv += `${row.dist.replace('.', ',')}\t${row.z.replace('.', ',')}\n`; });
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'export_profil_1m.csv'; a.click();
 };
 
 // ==========================================
@@ -383,23 +513,13 @@ window.exportChartCSV = () => {
 // ==========================================
 window.updateScalesLive = () => {
     if (!chartInstance) return;
-
-    let xMin = parseFloat(document.getElementById('x-min').value);
-    let xMax = parseFloat(document.getElementById('x-max').value);
-    let yMin = parseFloat(document.getElementById('y-min').value);
-    let yMax = parseFloat(document.getElementById('y-max').value);
-
+    let xMin = parseFloat(document.getElementById('x-min').value), xMax = parseFloat(document.getElementById('x-max').value);
+    let yMin = parseFloat(document.getElementById('y-min').value), yMax = parseFloat(document.getElementById('y-max').value);
     if (xMin >= xMax - 1) { xMin = xMax - 1; document.getElementById('x-min').value = xMin; }
     if (yMin >= yMax - 1) { yMin = yMax - 1; document.getElementById('y-min').value = yMin; }
-
-    document.getElementById('x-vals').innerText = `${xMin.toFixed(0)}m - ${xMax.toFixed(0)}m`;
-    document.getElementById('y-vals').innerText = `${yMin.toFixed(0)}m - ${yMax.toFixed(0)}m`;
-
-    chartInstance.options.scales.x.min = xMin;
-    chartInstance.options.scales.x.max = xMax;
-    chartInstance.options.scales.y.min = yMin;
-    chartInstance.options.scales.y.max = yMax;
-
+    document.getElementById('x-vals').innerText = `${xMin.toFixed(0)}m - ${xMax.toFixed(0)}m`; document.getElementById('y-vals').innerText = `${yMin.toFixed(0)}m - ${yMax.toFixed(0)}m`;
+    chartInstance.options.scales.x.min = xMin; chartInstance.options.scales.x.max = xMax;
+    chartInstance.options.scales.y.min = yMin; chartInstance.options.scales.y.max = yMax;
     chartInstance.update('none'); 
 };
 
@@ -408,8 +528,7 @@ window.updateScalesLive = () => {
 // ==========================================
 map.on('mousemove', (e) => {
     try {
-        if (!e.latlng) return;
-        const l93 = proj4("EPSG:4326", "EPSG:2154", [e.latlng.lng, e.latlng.lat]);
+        if (!e.latlng) return; const l93 = proj4("EPSG:4326", "EPSG:2154", [e.latlng.lng, e.latlng.lat]);
         const elX = document.getElementById('cur-x'), elY = document.getElementById('cur-y'), elZ = document.getElementById('cur-z');
         if (elX) elX.innerText = l93[0].toFixed(1); if (elY) elY.innerText = l93[1].toFixed(1);
         if (elZ) { let z = null; try { z = getZ(l93); } catch (err) {} elZ.innerText = (z !== null && !isNaN(z)) ? z.toFixed(2) : "---"; }
@@ -423,20 +542,15 @@ const profileWin = document.getElementById('profile-window'), profileHeader = do
 let isDragging = false, dragOffsetX = 0, dragOffsetY = 0;
 
 profileHeader.addEventListener('mousedown', (e) => {
-    if (e.target.tagName === 'BUTTON') return;
-    isDragging = true;
-    const rect = profileWin.getBoundingClientRect();
-    dragOffsetX = e.clientX - rect.left; dragOffsetY = e.clientY - rect.top;
+    if (e.target.tagName === 'BUTTON') return; isDragging = true;
+    const rect = profileWin.getBoundingClientRect(); dragOffsetX = e.clientX - rect.left; dragOffsetY = e.clientY - rect.top;
 });
 
 document.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    let newX = e.clientX - dragOffsetX, newY = e.clientY - dragOffsetY;
+    if (!isDragging) return; let newX = e.clientX - dragOffsetX, newY = e.clientY - dragOffsetY;
     if (newX < 0) newX = 0; if (newY < 0) newY = 0;
-    profileWin.style.bottom = 'auto'; profileWin.style.right = 'auto';  
-    profileWin.style.left = newX + 'px'; profileWin.style.top = newY + 'px';
+    profileWin.style.bottom = 'auto'; profileWin.style.right = 'auto'; profileWin.style.left = newX + 'px'; profileWin.style.top = newY + 'px';
 });
-
 document.addEventListener('mouseup', () => { isDragging = false; });
 
 // ==========================================
@@ -445,63 +559,227 @@ document.addEventListener('mouseup', () => { isDragging = false; });
 window.addEventListener('load', () => {
     try {
         // --- 1. CHARGEMENT DES PISTES ---
-        // On cherche vos pistes peu importe le nom de la variable
         let pistesGeo = null;
-        if (typeof pistesData !== 'undefined') pistesGeo = pistesData;
+        if (typeof pistesData !== 'undefined') pistesGeo = pistesData; 
         else if (typeof pistesGeoJSON !== 'undefined') pistesGeo = pistesGeoJSON;
 
         if (pistesGeo && pistesGeo.features) {
             const idPistes = Date.now(); 
-            const pistesLayer = L.geoJSON(pistesGeo, {
-                style: function (feature) {
-                    return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 };
-                }
+            const pistesLayer = L.geoJSON(pistesGeo, { 
+                style: function (feature) { 
+                    return { color: '#ffffff', weight: 1, opacity: 1, fillOpacity: 0.2 }; 
+                } 
             }).addTo(map);
-
-            kmzStore.push({ 
-                id: idPistes, 
-                name: "Mes Pistes", 
-                layer: pistesLayer, 
-                visible: true, 
-                color: '#ffffff', 
-                weight: 1 
-            });
             
+            kmzStore.push({ id: idPistes, name: "Mes Pistes", layer: pistesLayer, visible: true, color: '#ffffff', weight: 1 });
             map.fitBounds(pistesLayer.getBounds());
         }
 
         // --- 2. CHARGEMENT DES CANONS ---
         if (typeof canonData !== 'undefined' && canonData.features) {
             const idCanons = Date.now() + 1000; 
-            
             const canonLayer = L.geoJSON(canonData, {
                 pointToLayer: function (feature, latlng) {
-                    return L.circleMarker(latlng, {
-                        radius: 5,              // Taille du point
-                        fillColor: '#3498db',   // Couleur intérieure
-                        color: '#ffffff',       // Couleur de bordure
-                        weight: 1,              // Épaisseur bordure
-                        opacity: 1,
-                        fillOpacity: 0.8
+                    return L.circleMarker(latlng, { 
+                        radius: 5, 
+                        fillColor: '#3498db', 
+                        color: '#ffffff', 
+                        weight: 1, 
+                        opacity: 1, 
+                        fillOpacity: 0.8 
                     });
                 }
             }).addTo(map);
-
-            kmzStore.push({ 
-                id: idCanons, 
-                name: "Mes Canons", 
-                layer: canonLayer, 
-                visible: true, 
-                color: '#3498db', 
-                weight: 1 
-            });
+            
+            kmzStore.push({ id: idCanons, name: "Mes Canons", layer: canonLayer, visible: true, color: '#3498db', weight: 1 });
         }
-
-        // --- 3. AFFICHAGE DU MENU ---
-        // C'est cette ligne qui fait apparaître les cartes sur la gauche !
+        
         updateKmzUI();
-
-    } catch (e) {
-        console.error("Erreur de chargement des données :", e);
+    } catch (e) { 
+        console.error("Erreur de chargement des données statiques :", e); 
     }
 });
+// ==========================================
+// 11. SAUVEGARDE ET CHARGEMENT CLOUD (GOOGLE SHEETS)
+// ==========================================
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzZ-m9rVPuATkiYjccicrtBSrAieSSA_TTqmYpA61SoK4eTj11qesIEpItyys6Vu2GVXQ/exec"; // <--- REMETTEZ VOTRE LIEN GOOGLE SCRIPT ICI !!!
+
+window.saveProject = async () => {
+    const projectName = document.getElementById('project-name').value.trim();
+    if (!projectName) return alert("Veuillez taper un nom de projet pour sauvegarder.");
+    if (drawStore.length === 0) return alert("Aucune mesure à sauvegarder dans le panneau de droite !");
+
+    // On sauvegarde l'épaisseur ("weight") et on désactive l'édition avant de sauver
+    const exportData = drawStore.map(d => ({ 
+        id: d.id, type: d.type, name: d.name, color: d.color, weight: d.weight, 
+        ptsGPS: d.ptsGPS, totalDist: d.totalDist, statsHtml: d.statsHtml 
+    }));
+
+    const btn = document.querySelector('button[onclick="saveProject()"]');
+    const oldText = btn.innerText; btn.innerText = "⏳"; btn.disabled = true;
+
+    try {
+        const response = await fetch(SCRIPT_URL, {
+            method: "POST", redirect: "follow",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({ projectName: projectName, projectData: JSON.stringify(exportData) })
+        });
+        
+        const result = await response.json();
+        
+        if (result.status === "success") {
+            const newProject = { id: Date.now(), name: projectName, visible: true, features: [...drawStore] };
+            newProject.features.forEach(f => { f.isEditing = false; if (f.editGroup) map.removeLayer(f.editGroup); });
+            projectStore.push(newProject);
+            
+            drawStore = [];
+            if (currentProfileDrawId) { document.getElementById('profile-window').style.display = 'none'; currentProfileDrawId = null; }
+            updateDrawUI(); updateProjectUI();
+            alert("✅ Projet sauvegardé et déplacé dans vos calques à gauche !");
+        }
+    } catch (e) {
+        console.error(e); alert("Erreur de sauvegarde. Vérifiez votre lien Google Script.");
+    } finally {
+        btn.innerText = oldText; btn.disabled = false;
+    }
+};
+
+window.loadProject = async () => {
+    const projectName = document.getElementById('project-name').value.trim();
+    if (!projectName) return alert("Veuillez taper le nom du projet à charger.");
+
+    const btn = document.querySelector('button[onclick="loadProject()"]');
+    const oldText = btn.innerText; btn.innerText = "⏳"; btn.disabled = true;
+
+    try {
+        const response = await fetch(`${SCRIPT_URL}?projectName=${encodeURIComponent(projectName)}`);
+        const result = await response.json();
+        if (result.status === "error") return alert("❌ Projet introuvable ! Vérifiez le nom.");
+
+        const loadedData = JSON.parse(result.data);
+        const newProject = { id: Date.now(), name: projectName, visible: true, features: [] };
+
+        loadedData.forEach(d => {
+            const weight = d.weight || (d.type === 'area' ? 3 : 4);
+            const layer = d.type === 'area' ? L.polygon(d.ptsGPS, { color: d.color, weight: weight, fillOpacity: 0.3 }).addTo(map) : L.polyline(d.ptsGPS, { color: d.color, weight: weight }).addTo(map);
+            newProject.features.push({ 
+                id: d.id, type: d.type, name: d.name, layer: layer, ptsGPS: d.ptsGPS, visible: true, color: d.color, 
+                weight: weight, isEditing: false, editGroup: L.layerGroup().addTo(map), 
+                totalDist: d.totalDist, statsHtml: d.statsHtml 
+            });
+        });
+
+        projectStore.push(newProject); updateProjectUI();
+        const group = L.featureGroup(newProject.features.map(f => f.layer)); map.fitBounds(group.getBounds());
+        alert("✅ Projet chargé dans vos calques à gauche !");
+    } catch (e) {
+        console.error(e); alert("Erreur de chargement. Vérifiez votre lien Google Script.");
+    } finally {
+        btn.innerText = oldText; btn.disabled = false;
+    }
+};
+
+function updateProjectUI() {
+    const list = document.getElementById('project-list'); if (!list) return; list.innerHTML = '';
+    projectStore.forEach(p => {
+        let featuresHtml = '';
+        p.features.forEach(f => {
+            let actionButton = '';
+            if (f.type === 'line') {
+                actionButton = `<button onclick="generateProfileFromProject(${p.id}, ${f.id})" style="width:100%; margin-top:5px; font-size:0.75em; cursor:pointer; background:#333; color:white; border:1px solid #555; padding:3px; border-radius:3px;">📈 Voir profil</button>`;
+            } else if (f.type === 'area') {
+                actionButton = `<button onclick="generate3DViewFromProject(${p.id}, ${f.id})" style="width:100%; margin-top:5px; font-size:0.75em; cursor:pointer; background:#34495e; color:white; border:1px solid #555; padding:3px; border-radius:3px;">👁️ Contrôle Vue 3D</button>`;
+            }
+
+            const editBtnText = f.isEditing ? '✅ Fin édition' : '✏️ Éditer';
+            const editControls = f.isEditing ? `<div style="margin-top:5px; font-size:0.85em; background:#333; padding:5px; border-radius:3px; display:flex; align-items:center; gap:5px;">Épaisseur: <input type="range" min="1" max="10" value="${f.weight}" onchange="changeFeatureWeight(${f.id}, this.value, true, ${p.id})"></div>` : '';
+
+            featuresHtml += `
+                <div style="margin-left: 10px; border-left: 3px solid ${f.color}; padding-left: 8px; margin-top: 8px; background: #1a1a1a; padding-bottom: 5px;">
+                    <div style="display:flex; justify-content: space-between; align-items:center;">
+                        <div>
+                            <input type="checkbox" ${f.visible ? 'checked' : ''} onchange="toggleProjectFeature(${p.id}, ${f.id})">
+                            <input type="color" class="color-picker" value="${f.color}" onchange="changeProjectFeatureColor(${p.id}, ${f.id}, this.value)">
+                            <span style="font-size:0.9em; font-weight:bold;">${f.name}</span>
+                            <button onclick="toggleEditMode(${f.id}, true, ${p.id})" style="background:${f.isEditing?'#27ae60':'#7f8c8d'}; color:white; border:none; border-radius:3px; padding:2px 5px; cursor:pointer; font-size:0.7em; margin-left:5px;">${editBtnText}</button>
+                        </div>
+                        <button class="btn-del" onclick="deleteProjectFeature(${p.id}, ${f.id})" style="font-size:0.9em;">✕</button>
+                    </div>
+                    ${editControls}
+                    <div style="font-size:0.85em; color:#ddd; margin: 5px 0;">${f.statsHtml || '<i>Stats non disponibles</i>'}</div>
+                    ${actionButton}
+                </div>
+            `;
+        });
+
+        list.innerHTML += `<div class="card"><div class="card-header"><div><input type="checkbox" ${p.visible ? 'checked' : ''} onchange="toggleProject(${p.id})"><strong style="color:var(--accent); font-size:1.1em;">📁 ${p.name}</strong></div><button class="btn-del" onclick="deleteProject(${p.id})">✕</button></div><details style="margin-top: 8px; cursor: pointer;"><summary style="font-size: 0.85em; color: #aaa;">Voir le contenu (${p.features.length} calques)</summary>${featuresHtml}</details></div>`;
+    });
+}
+
+// Actions sur les projets sauvegardés
+window.toggleProject = (pid) => { const p = projectStore.find(x => x.id === pid); p.visible = !p.visible; p.features.forEach(f => { f.visible = p.visible; if (f.visible) { f.layer.addTo(map); if(f.isEditing) makeEditable(f, true, p.id); } else { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); } }); updateProjectUI(); };
+window.deleteProject = (pid) => { const p = projectStore.find(x => x.id === pid); p.features.forEach(f => { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); }); projectStore = projectStore.filter(x => x.id !== pid); updateProjectUI(); };
+window.toggleProjectFeature = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); f.visible = !f.visible; if (f.visible) { f.layer.addTo(map); if(f.isEditing) makeEditable(f, true, p.id); } else { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); } updateProjectUI(); };
+window.changeProjectFeatureColor = (pid, fid, color) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); f.color = color; f.layer.setStyle({color: color}); updateProjectUI(); };
+window.deleteProjectFeature = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); p.features = p.features.filter(x => x.id !== fid); updateProjectUI(); };
+window.generateProfileFromProject = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); generateProfile(f); };
+
+// Vue 3D depuis un projet
+window.generate3DViewFromProject = (pid, fid) => {
+    const p = projectStore.find(x => x.id === pid); if (!p) return;
+    const f = p.features.find(x => x.id === fid); if (!f || f.type !== 'area') return;
+    if (mntStore.filter(m => m.visible).length === 0) return alert("Activez un MNT !");
+    
+    document.getElementById('window-3d').style.display = 'block';
+    document.getElementById('plot-3d').innerHTML = '<h3 style="color:white; text-align:center; margin-top:20%;">Calcul de la 3D en cours... ⏳</h3>';
+    
+    setTimeout(() => {
+        const l93Pts = f.ptsGPS.map(pt => proj4("EPSG:4326", "EPSG:2154", [pt.lng, pt.lat]));
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        l93Pts.forEach(pt => { if (pt[0] < minX) minX = pt[0]; if (pt[0] > maxX) maxX = pt[0]; if (pt[1] < minY) minY = pt[1]; if (pt[1] > maxY) maxY = pt[1]; });
+        
+        let borderPtsWithZ = [];
+        l93Pts.forEach(pt => { let z = getZ(pt); if (z !== null) borderPtsWithZ.push({ x: pt[0], y: pt[1], z: z }); });
+        
+        const maxPts = 40; const step = Math.max(1, (maxX - minX) / maxPts, (maxY - minY) / maxPts);
+        let xVals = [], yVals = [], zTerrain = [], zRefPlane = [];
+        for (let x = minX; x <= maxX; x += step) xVals.push(x);
+        
+        for (let y = minY; y <= maxY; y += step) {
+            let rowTerrain = [], rowRef = []; yVals.push(y);
+            for (let x = minX; x <= maxX; x += step) {
+                if (isPointInPolygon([x, y], l93Pts)) {
+                    let zMNT = getZ([x, y]); rowTerrain.push(zMNT !== null ? zMNT : null);
+                    let sumZ = 0, sumW = 0, exactMatch = false, zBase = 0;
+                    for (let pt of borderPtsWithZ) { let d2 = (x - pt.x)**2 + (y - pt.y)**2; if (d2 === 0) { zBase = pt.z; exactMatch = true; break; } let w = 1 / d2; sumZ += pt.z * w; sumW += w; }
+                    if (!exactMatch) zBase = sumZ / sumW; rowRef.push(zBase);
+                } else { rowTerrain.push(null); rowRef.push(null); }
+            }
+            zTerrain.push(rowTerrain); zRefPlane.push(rowRef);
+        }
+        
+        const traceTerrain = { z: zTerrain, x: xVals, y: yVals, type: 'surface', name: 'Terrain Naturel', colorscale: 'Earth', showscale: false };
+        const traceRef = { z: zRefPlane, x: xVals, y: yVals, type: 'surface', name: 'Base Calculée', colorscale: 'Blues', showscale: false, opacity: 0.6 };
+
+        const layout = { margin: { l: 0, r: 0, b: 0, t: 0 }, scene: { aspectmode: 'data', camera: { eye: {x: -1.2, y: -1.2, z: 1.2} } }, paper_bgcolor: '#222', font: { color: 'white' }, hovermode: 'closest' };
+        
+        Plotly.newPlot('plot-3d', [traceTerrain, traceRef], layout).then(() => {
+            const plotDiv = document.getElementById('plot-3d');
+            plotDiv.on('plotly_hover', (data) => {
+                if (data.points.length > 0) {
+                    const pt = data.points[0]; const gps = proj4("EPSG:2154", "EPSG:4326", [pt.x, pt.y]);
+                    if (!cursorMarker) cursorMarker = L.circleMarker([gps[1], gps[0]], { radius: 6, color: 'red', fillColor: '#fff', fillOpacity: 1 }).addTo(map);
+                    else cursorMarker.setLatLng([gps[1], gps[0]]);
+                }
+            });
+            plotDiv.addEventListener('mouseleave', () => { if (cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; } });
+        });
+        
+    }, 100);
+};
+window.toggleProject = (pid) => { const p = projectStore.find(x => x.id === pid); p.visible = !p.visible; p.features.forEach(f => { f.visible = p.visible; if (f.visible) f.layer.addTo(map); else map.removeLayer(f.layer); }); updateProjectUI(); };
+window.deleteProject = (pid) => { const p = projectStore.find(x => x.id === pid); p.features.forEach(f => map.removeLayer(f.layer)); projectStore = projectStore.filter(x => x.id !== pid); updateProjectUI(); };
+window.toggleProjectFeature = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); f.visible = !f.visible; if (f.visible) f.layer.addTo(map); else map.removeLayer(f.layer); updateProjectUI(); };
+window.changeProjectFeatureColor = (pid, fid, color) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); f.color = color; f.layer.setStyle({color: color}); updateProjectUI(); };
+window.deleteProjectFeature = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); map.removeLayer(f.layer); p.features = p.features.filter(x => x.id !== fid); updateProjectUI(); };
+window.generateProfileFromProject = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); generateProfile(f); };

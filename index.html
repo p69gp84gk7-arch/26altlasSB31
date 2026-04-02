@@ -1,3 +1,4 @@
+index.html
 <!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -67,7 +68,6 @@
       <div class="subtitle">1. Altitudes MNT (Serveur)</div>
         
         <select id="mnt-select" style="width: 100%; padding: 5px; margin-bottom: 5px; font-size: 0.8em; background: #333; color: white; border: 1px solid #555; border-radius: 3px;">
-            <option value="">-- Choisir un secteur MNT --</option>
             <option value="https://raw.githubusercontent.com/p69gp84gk7-arch/26altlasSB31/main/tif/MNT_2019_100_498_6188_L93.tif">MNT Secteur 498-6188</option>
             <option value="https://raw.githubusercontent.com/p69gp84gk7-arch/26altlasSB31/main/tif/MNT_2019_100_498_6189_L93.tif">MNT Secteur 498-6189</option>
             <option value="https://raw.githubusercontent.com/p69gp84gk7-arch/26altlasSB31/main/tif/MNT_2019_100_498_6190_L93.tif">MNT Secteur 498_6190</option>
@@ -106,6 +106,7 @@
             <option value="https://raw.githubusercontent.com/p69gp84gk7-arch/26altlasSB31/main/tif/MNT_2019_500_502_6190_L93.tif">MNT_2019_500_502_6190</option>
             <option value="https://raw.githubusercontent.com/p69gp84gk7-arch/26altlasSB31/main/tif/MNT_2019_500_502_6191_L93.tif">MNT_2019_500_502_6191</option>
             <option value="https://raw.githubusercontent.com/p69gp84gk7-arch/26altlasSB31/main/tif/MNT_2019_500_L93.tif">MNT_2019_500</option>
+            
         </select>
         
         <button onclick="loadRemoteMNT()" style="width: 100%; padding: 6px; margin-bottom: 10px; font-size: 0.85em; cursor: pointer; background: #00d1b2; color: #111; border: none; border-radius: 3px; font-weight: bold;">☁️ Télécharger et Afficher</button>
@@ -117,6 +118,8 @@
 
         <div class="subtitle">2. Calques & Pistes</div>
         <div id="kmz-list"></div>
+        <div class="subtitle">3. Mes Projets (Sauvegardes)</div>
+        <div id="project-list"></div>
     </div>
 
     <div id="map"></div>
@@ -128,6 +131,11 @@
         <button id="btn-finish" onclick="finalizeDraw()">✅ TERMINER LE TRACÉ</button>
         
         <div class="subtitle" style="margin-top: 15px;">Mesures Éditables</div>
+        <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+            <input type="text" id="project-name" placeholder="Nom du projet..." style="flex-grow: 1; padding: 5px; background: #333; color: white; border: 1px solid #555; border-radius: 3px;">
+            <button onclick="saveProject()" style="background:#2ecc71; color:white; border:none; border-radius:3px; cursor:pointer; padding: 0 10px; font-weight:bold;">Sauver</button>
+            <button onclick="loadProject()" style="background:#f39c12; color:white; border:none; border-radius:3px; cursor:pointer; padding: 0 10px; font-weight:bold;">Charger</button>
+        </div>
         <div id="measure-list" style="flex-grow:1; overflow-y:auto;"></div>
 
         <div class="coords">
@@ -138,6 +146,7 @@
     </div>
 
     <div id="profile-window">
+
         <div id="profile-header">
             <span>📈 Profil Altimétrique</span>
             <div>
@@ -166,9 +175,18 @@
             <canvas id="profileChart"></canvas>
         </div>
     </div>
-
+     <div id="window-3d" style="display:none; position:absolute; top:80px; left:80px; width:650px; height:550px; background:#222; border:1px solid #555; z-index:9999; box-shadow: 0 5px 15px rgba(0,0,0,0.5); border-radius:5px;">
+        <div id="header-3d" style="background:#333; padding:10px; cursor:move; display:flex; justify-content:space-between; align-items:center; border-radius:5px 5px 0 0;">
+            <b style="color:white;">👁️ Vue 3D : Terrain (Plein) vs Base calculée (Transparent)</b>
+            <button onclick="document.getElementById('window-3d').style.display='none'" style="background:#e74c3c; color:white; border:none; border-radius:3px; cursor:pointer; padding:2px 8px;">✕</button>
+        </div>
+        <div id="plot-3d" style="width:100%; height:calc(100% - 40px);"></div>
+    </div>
+    <script src="https://cdn.plot.ly/plotly-2.30.0.min.js"></script>
+    
     <script src="pistes.js"></script>
     <script src="canon.js"></script>
     <script src="main.js"></script>
+</body>
 </body>
 </html>

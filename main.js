@@ -3,10 +3,13 @@
 // ==========================================
 proj4.defs("EPSG:2154","+proj=lcc +lat_1=49 +lat_2=44 +lat_0=46.5 +lon_0=3 +x_0=700000 +y_0=6600000 +ellps=GRS80 +units=m +no_defs");
 
-const map = L.map('map', { doubleClickZoom: false }).setView([42.7645, 0.5833], 15);
-preferCanvas: true
-const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19 }).addTo(map);
-const planOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 });
+const map = L.map('map', { 
+    doubleClickZoom: false,
+    preferCanvas: true 
+}).setView([42.7645, 0.5833], 15);
+
+const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 19, crossOrigin: true }).addTo(map);
+const planOSM = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, crossOrigin: true });
 L.control.layers({ "🌍 Satellite": satellite, "🗺️ Plan": planOSM }).addTo(map);
 
 let mntStore = [], drawStore = [], kmzStore = [], projectStore = [];
@@ -14,7 +17,6 @@ let currentPoints = [], tempLayer = null, currentTool = null, circleCenter = nul
 let chartInstance = null, cursorMarker = null, currentProfileDrawId = null;
 window.currentEditingFeature = null; window.current3DData = null;
 
-// Le point rouge qui suit votre souris
 function updateCursor(lat, lng) {
     if (!cursorMarker) {
         cursorMarker = L.circleMarker([lat, lng], { radius: 7, color: '#e74c3c', fillColor: '#fff', fillOpacity: 1, weight: 3, zIndexOffset: 1000 }).addTo(map);
@@ -24,7 +26,7 @@ function updateCursor(lat, lng) {
 }
 
 // ==========================================
-// 2. MOTEUR ALTIMÉTRIQUE (MNT)
+// 2. MOTEUR ALTIMÉTRIQUE (INTERPOLATION BILINÉAIRE STRICTE L93)
 // ==========================================
 window.loadRemoteMNT = async () => {
     const sel = document.getElementById('mnt-select'); const url = sel.value; if (!url) return alert("Sélectionnez un MNT.");
@@ -43,10 +45,39 @@ function getZ(l93) {
     for (let m of mntStore) {
         if (!m.visible) continue;
         if (l93[0] >= m.bbox[0] && l93[0] <= m.bbox[2] && l93[1] >= m.bbox[1] && l93[1] <= m.bbox[3]) {
-            const px = ((l93[0] - m.bbox[0]) / (m.bbox[2] - m.bbox[0])) * m.width, py = ((m.bbox[3] - l93[1]) / (m.bbox[3] - m.bbox[1])) * m.height;
-            const x1 = Math.floor(px), y1 = Math.floor(py); const q = m.data[y1 * m.width + x1]; return q < -500 ? null : q;
+            const pixelWidth = (m.bbox[2] - m.bbox[0]) / m.width;
+            const pixelHeight = (m.bbox[3] - m.bbox[1]) / m.height;
+            let px = ((l93[0] - m.bbox[0]) / pixelWidth) - 0.5;
+            let py = ((m.bbox[3] - l93[1]) / pixelHeight) - 0.5;
+
+            const x1 = Math.floor(px); const y1 = Math.floor(py);
+            const x2 = x1 + 1; const y2 = y1 + 1;
+
+            const cx1 = Math.max(0, Math.min(x1, m.width - 1));
+            const cy1 = Math.max(0, Math.min(y1, m.height - 1));
+            const cx2 = Math.max(0, Math.min(x2, m.width - 1));
+            const cy2 = Math.max(0, Math.min(y2, m.height - 1));
+
+            const dx = px - x1; const dy = py - y1;
+
+            const q11 = m.data[cy1 * m.width + cx1]; 
+            const q21 = m.data[cy1 * m.width + cx2];
+            const q12 = m.data[cy2 * m.width + cx1]; 
+            const q22 = m.data[cy2 * m.width + cx2];
+
+            if (q11 < -500 || q21 < -500 || q12 < -500 || q22 < -500) {
+                const rx = Math.max(0, Math.min(Math.round(px), m.width - 1));
+                const ry = Math.max(0, Math.min(Math.round(py), m.height - 1));
+                const safeQ = m.data[ry * m.width + rx];
+                return safeQ < -500 ? null : safeQ;
+            }
+
+            const top = q11 * (1 - dx) + q21 * dx;
+            const bottom = q12 * (1 - dx) + q22 * dx;
+            return top * (1 - dy) + bottom * dy;
         }
-    } return null;
+    } 
+    return null;
 }
 
 function updateMntUI() {
@@ -81,90 +112,146 @@ function updateKmzUI() {
 window.toggleKMZ = (id) => { const k = kmzStore.find(x => x.id === id); if (!k) return; k.visible = !k.visible; if (k.visible) k.layer.addTo(map); else map.removeLayer(k.layer); updateKmzUI(); };
 
 // ==========================================
-// 4. OUTILS DE DESSIN
+// 4. OUTILS DE DESSIN ET GESTION DES CLICS
 // ==========================================
 window.startTool = (tool) => { 
-    currentTool = tool; currentPoints = []; circleCenter = null;
-    if (tempLayer) map.removeLayer(tempLayer); tempLayer = null;
+    currentTool = tool; 
+    currentPoints = []; 
+    circleCenter = null;
+    if (tempLayer) { map.removeLayer(tempLayer); tempLayer = null; }
+    
     document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active')); 
-    document.getElementById('btn-'+tool).classList.add('active');
-    document.getElementById('btn-finish').style.display = tool === 'circle' ? 'none' : 'block';
+    const activeBtn = document.getElementById('btn-'+tool);
+    if (activeBtn) activeBtn.classList.add('active');
+    
+    const finishBtn = document.getElementById('btn-finish');
+    if (finishBtn) finishBtn.style.display = (tool === 'circle') ? 'none' : 'block';
 };
 
 map.on('click', (e) => {
-    if (!currentTool) return;
-    if (currentTool === 'circle') {
-        if (!circleCenter) { circleCenter = e.latlng; tempLayer = L.circle(circleCenter, {radius: 0, color: '#9b59b6', weight: 3, fillOpacity: 0.3}).addTo(map); } 
-        else { finalizeCircle(circleCenter, map.distance(circleCenter, e.latlng)); circleCenter = null; }
+    if (window.isAddingPointMode && window.currentEditingFeature) {
+        const d = window.currentEditingFeature.d;
+        d.ptsGPS.push({lat: e.latlng.lat, lng: e.latlng.lng});
+        d.layer.setLatLngs(d.ptsGPS);
+        makeEditable(d, window.currentEditingFeature.isProj, window.currentEditingFeature.pid);
+        recalculateStats(d);
+        if(d.type==='line') generateProfile(d);
+        window.isAddingPointMode = false;
+        window.currentEditingFeature.isProj ? updateProjectUI() : updateDrawUI();
         return;
     }
+
+    if (!currentTool) return;
+    
+    if (currentTool === 'circle') {
+        if (!circleCenter) { 
+            circleCenter = e.latlng; 
+            tempLayer = L.circle(circleCenter, {radius: 0, color: '#9b59b6', weight: 3, fillOpacity: 0.3}).addTo(map); 
+        } else { 
+            finalizeCircle(circleCenter, map.distance(circleCenter, e.latlng)); 
+        }
+        return;
+    }
+    
     currentPoints.push({lat: e.latlng.lat, lng: e.latlng.lng}); 
     if (tempLayer) map.removeLayer(tempLayer);
+    
     const color = currentTool === 'area' ? '#e67e22' : '#3498db';
-    tempLayer = currentTool === 'area' ? L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map) : L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
+    tempLayer = currentTool === 'area' 
+        ? L.polygon(currentPoints, { color, weight: 3, fillOpacity: 0.3 }).addTo(map) 
+        : L.polyline(currentPoints, { color, weight: 4 }).addTo(map);
 });
 
 window.finalizeDraw = () => {
-    if (currentPoints.length < 2) return;
-    const type = currentTool; const color = type==='area' ? '#e67e22' : '#3498db';
-    const drawObj = { id: Date.now(), type, name: type==='area' ? 'Surface' : 'Tracé', ptsGPS: [...currentPoints], visible: true, color, weight: 4, isEditing: false, editGroup: L.layerGroup().addTo(map) };
-    drawObj.layer = type === 'area' ? L.polygon(currentPoints, {color, weight: 3, fillOpacity: 0.3}).addTo(map) : L.polyline(currentPoints, {color, weight: 4}).addTo(map);
-    drawStore.unshift(drawObj); recalculateStats(drawObj); updateDrawUI();
+    if (!currentTool || currentPoints.length < 2) return; 
+    
+    const type = currentTool; 
+    const color = type === 'area' ? '#e67e22' : '#3498db';
+    
+    const drawObj = { 
+        id: Date.now(), type: type, name: type === 'area' ? 'Surface' : 'Ligne', 
+        ptsGPS: [...currentPoints], visible: true, color: color, weight: 4, 
+        isEditing: false, editGroup: L.layerGroup().addTo(map) 
+    };
+    
+    drawObj.layer = type === 'area' 
+        ? L.polygon(currentPoints, {color, weight: 3, fillOpacity: 0.3}).addTo(map) 
+        : L.polyline(currentPoints, {color, weight: 4}).addTo(map);
+        
+    drawStore.unshift(drawObj); 
+    
+    if (tempLayer) { map.removeLayer(tempLayer); tempLayer = null; }
+    currentTool = null; currentPoints = [];
+    
+    document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active')); 
+    const finishBtn = document.getElementById('btn-finish');
+    if (finishBtn) finishBtn.style.display = 'none';
+
+    recalculateStats(drawObj); 
+    updateDrawUI();
     if(type === 'line') generateProfile(drawObj);
-    currentTool = null; currentPoints = []; if(tempLayer) map.removeLayer(tempLayer);
-    document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active')); document.getElementById('btn-finish').style.display = 'none';
 };
 
 window.finalizeCircle = (center, radius) => {
-    const drawObj = { id: Date.now(), type: 'circle', name: 'Cercle', center, radius, visible: true, color: '#9b59b6', weight: 3, isEditing: false, editGroup: L.layerGroup().addTo(map) };
+    const drawObj = { 
+        id: Date.now(), type: 'circle', name: 'Cercle', center, radius, 
+        visible: true, color: '#9b59b6', weight: 3, isEditing: false, 
+        editGroup: L.layerGroup().addTo(map) 
+    };
+    
     drawObj.layer = L.circle(center, {radius, color: '#9b59b6', weight: 3, fillOpacity: 0.3}).addTo(map);
+    
     const pts = []; const cL93 = proj4("EPSG:4326", "EPSG:2154", [center.lng, center.lat]);
-    for (let i=0; i<64; i++) { const a = (i*2*Math.PI)/64; const g = proj4("EPSG:2154", "EPSG:4326", [cL93[0]+radius*Math.cos(a), cL93[1]+radius*Math.sin(a)]); pts.push({lat: g[1], lng: g[0]}); }
-    drawObj.ptsGPS = pts; drawStore.unshift(drawObj); recalculateStats(drawObj); updateDrawUI(); currentTool = null;
+    for (let i=0; i<64; i++) { 
+        const a = (i*2*Math.PI)/64; 
+        const g = proj4("EPSG:2154", "EPSG:4326", [cL93[0]+radius*Math.cos(a), cL93[1]+radius*Math.sin(a)]); 
+        pts.push({lat: g[1], lng: g[0]}); 
+    }
+    drawObj.ptsGPS = pts; drawStore.unshift(drawObj); 
+    
+    if (tempLayer) { map.removeLayer(tempLayer); tempLayer = null; }
+    currentTool = null; circleCenter = null;
+    
     document.querySelectorAll('.btn-tool').forEach(b => b.classList.remove('active'));
+    recalculateStats(drawObj); updateDrawUI(); 
 };
 
 // ==========================================
-// 5. STATS, ÉDITION INTÉGRÉE & CUMULS DANS L'ÉTIQUETTE
+// 5. STATS, ÉDITION AVANCÉE & AJOUT DE POINTS
 // ==========================================
+window.isAddingPointMode = false;
+window.handlesVisible = true;
+
 function recalculateStats(d) {
     if (!d) return;
     const l93 = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
     let h = "";
     
-    // NOUVEAU : Calcul Zmin et Zmax pour TOUS les tracés
     let zMin = Infinity, zMax = -Infinity;
-    for (let i = 0; i < l93.length; i++) {
-        let z = d.ptsGPS[i].customZ !== undefined ? d.ptsGPS[i].customZ : getZ(l93[i]);
-        if (z !== null) {
-            if (z < zMin) zMin = z;
-            if (z > zMax) zMax = z;
-        }
-    }
+    l93.forEach((p, i) => {
+        let z = d.ptsGPS[i].customZ !== undefined ? d.ptsGPS[i].customZ : getZ(p);
+        if (z !== null) { zMin = Math.min(zMin, z); zMax = Math.max(zMax, z); }
+    });
     
-    let extraStats = "";
-    if (zMin !== Infinity && zMax !== -Infinity) {
-        // Z au cm près (.toFixed(2))
-        extraStats = `<br>Zmin: <b>${zMin.toFixed(2)} m</b> | Zmax: <b>${zMax.toFixed(2)} m</b> | ΔZ: <b>${(zMax-zMin).toFixed(2)} m</b>`;
-    }
+    let extraZ = (zMin !== Infinity && zMax !== -Infinity) 
+        ? `<br>Zmin: <b>${zMin.toFixed(2)}m</b> | Zmax: <b>${zMax.toFixed(2)}m</b> | ΔZ: <b>${(zMax-zMin).toFixed(2)}m</b>` : "";
 
     if (d.type === 'circle') {
         const area = Math.PI * d.radius * d.radius; const perim = 2 * Math.PI * d.radius;
-        h = `Rayon: <b>${d.radius.toFixed(2)} m</b> | Diam: <b>${(2*d.radius).toFixed(2)} m</b><br>Périmètre: <b>${perim.toFixed(2)} m</b> | Surface: <b>${area.toFixed(2)} m²</b>${extraStats}`;
+        h = `Rayon: <b>${d.radius.toFixed(2)} m</b> | Surface: <b>${area.toFixed(2)} m²</b>${extraZ}`;
     } else if (d.type === 'line') {
         let dist = 0; for (let i = 1; i < l93.length; i++) dist += Math.hypot(l93[i][0]-l93[i-1][0], l93[i][1]-l93[i-1][1]);
         const z1 = d.ptsGPS[0].customZ !== undefined ? d.ptsGPS[0].customZ : (getZ(l93[0])||0); 
         const z2 = d.ptsGPS[l93.length-1].customZ !== undefined ? d.ptsGPS[l93.length-1].customZ : (getZ(l93[l93.length-1])||0); 
         const dz = Math.abs(z2 - z1); const pente = dist > 0 ? (dz / dist * 100) : 0;
-        h = `Longueur: <b>${dist.toFixed(2)} m</b> | Dénivelé: <b>${dz.toFixed(2)} m</b><br>Pente moy: <b>${pente.toFixed(2)} %</b>${extraStats}`;
+        h = `Longueur: <b>${dist.toFixed(2)} m</b> | Dénivelé: <b>${dz.toFixed(2)} m</b><br>Pente moy: <b>${pente.toFixed(2)} %</b>${extraZ}`;
     } else {
         let area = 0; let perim = 0;
         for (let i = 0; i < l93.length; i++) { 
-            let j = (i+1) % l93.length; 
-            area += l93[i][0]*l93[j][1] - l93[j][0]*l93[i][1]; 
+            let j = (i+1) % l93.length; area += l93[i][0]*l93[j][1] - l93[j][0]*l93[i][1]; 
             perim += Math.hypot(l93[j][0] - l93[i][0], l93[j][1] - l93[i][1]);
         }
-        h = `Périmètre: <b>${perim.toFixed(2)} m</b><br>Surface au sol: <b>${(Math.abs(area)/2).toFixed(2)} m²</b>${extraStats}`;
+        h = `Périmètre: <b>${perim.toFixed(2)} m</b><br>Surface au sol: <b>${(Math.abs(area)/2).toFixed(2)} m²</b>${extraZ}`;
     }
 
     if (d.volumeHtml && d.volumeHtml !== "") {
@@ -177,7 +264,7 @@ function recalculateStats(d) {
               </div>`;
     }
     
-    d.statsHtml = h; 
+    d.statsHtml = h;
     const stD = document.getElementById(`stats-${d.id}`); if (stD) stD.innerHTML = h;
     const stG = document.getElementById(`stats-proj-${d.id}`); if (stG) stG.innerHTML = h;
 }
@@ -185,32 +272,52 @@ function recalculateStats(d) {
 window.clearVolumes = (id) => { let d = drawStore.find(x=>x.id===id) || projectStore.flatMap(p=>p.features).find(f=>f.id===id); if(d) { d.volumeHtml = ""; recalculateStats(d); } };
 
 window.toggleEditMode = (id, isProj = false, pid = null) => {
-    let d = isProj ? projectStore.find(p=>p.id===pid)?.features.find(f=>f.id===id) : drawStore.find(x=>x.id===id); if(!d) return; 
-    d.isEditing = !d.isEditing; if(!d.editGroup) d.editGroup = L.layerGroup().addTo(map);
-    if(d.isEditing) { makeEditable(d, isProj, pid); } else { d.editGroup.clearLayers(); window.currentEditingFeature = null; }
+    let d = isProj ? projectStore.find(p=>p.id===pid)?.features.find(f=>f.id===id) : drawStore.find(x=>x.id===id);
+    if(!d) return;
+    d.isEditing = !d.isEditing;
+    window.handlesVisible = true;
+    if(!d.editGroup) d.editGroup = L.layerGroup().addTo(map);
+    if(d.isEditing) { makeEditable(d, isProj, pid); } else { d.editGroup.clearLayers(); window.isAddingPointMode = false; window.currentEditingFeature = null; }
     isProj ? updateProjectUI() : updateDrawUI();
 };
 
+window.toggleHandles = () => {
+    window.handlesVisible = !window.handlesVisible;
+    const handles = document.querySelectorAll('.numbered-handle');
+    handles.forEach(h => h.style.display = window.handlesVisible ? 'block' : 'none');
+};
+
+window.activateAddPoint = () => {
+    window.isAddingPointMode = true;
+    alert("Cliquez n'importe où sur la carte pour ajouter un point à la fin de ce tracé.");
+};
+
 function makeEditable(d, isProj, pid) {
-    d.editGroup.clearLayers(); if (d.type === 'circle') return; // On n'édite pas les 64 points d'un cercle à la main
+    d.editGroup.clearLayers();
+    if (d.type === 'circle') return;
     window.currentEditingFeature = { d, isProj, pid };
     d.ptsGPS.forEach((pt, idx) => {
-        const icon = L.divIcon({ className: 'numbered-handle', html: `<div style="background:#e74c3c; color:white; border-radius:50%; width:20px; height:20px; text-align:center; line-height:20px; font-size:11px; font-weight:bold; border:2px solid white; box-shadow:0 0 3px rgba(0,0,0,0.5);">${idx + 1}</div>`, iconSize: [24, 24], iconAnchor: [12, 12] });
+        const icon = L.divIcon({ 
+            className: 'numbered-handle', 
+            html: `<div style="background:#e74c3c; color:white; border-radius:50%; width:20px; height:20px; text-align:center; line-height:20px; font-size:11px; font-weight:bold; border:2px solid white; box-shadow:0 0 3px rgba(0,0,0,0.5); display:${window.handlesVisible?'block':'none'};">${idx + 1}</div>`, 
+            iconSize: [24, 24], iconAnchor: [12, 12] 
+        });
         const m = L.marker(pt, { icon, draggable: true }).addTo(d.editGroup);
-        
         m.on('drag', (e) => {
-            d.ptsGPS[idx].lat = e.latlng.lat; d.ptsGPS[idx].lng = e.latlng.lng; d.layer.setLatLngs(d.ptsGPS); 
+            d.ptsGPS[idx].lat = e.latlng.lat; d.ptsGPS[idx].lng = e.latlng.lng;
+            d.layer.setLatLngs(d.ptsGPS);
             let distMsg = "";
             if (idx > 0) distMsg += `← ${map.distance(d.ptsGPS[idx-1], e.latlng).toFixed(2)}m `;
             if (idx < d.ptsGPS.length - 1) distMsg += `→ ${map.distance(e.latlng, d.ptsGPS[idx+1]).toFixed(2)}m`;
             if (d.type === 'area' && (idx === 0 || idx === d.ptsGPS.length - 1)) { distMsg += ` (Ferm.: ${map.distance(d.ptsGPS[0], d.ptsGPS[d.ptsGPS.length-1]).toFixed(2)}m)`; }
             if (distMsg !== "") m.bindTooltip(distMsg, {permanent: true, direction: 'top', offset: [0, -10]}).openTooltip();
 
-            recalculateStats(d); if(d.type==='line') generateProfile(d);
+            recalculateStats(d);
+            if(d.type==='line') generateProfile(d);
             
             const l93 = proj4("EPSG:4326", "EPSG:2154", [e.latlng.lng, e.latlng.lat]);
-            const elX = document.getElementById(`edit-x-${d.id}-${idx}`); if(elX) elX.value = l93[0].toFixed(2);
-            const elY = document.getElementById(`edit-y-${d.id}-${idx}`); if(elY) elY.value = l93[1].toFixed(2);
+            const ex = document.getElementById(`edit-x-${d.id}-${idx}`); if(ex) ex.value = l93[0].toFixed(2);
+            const ey = document.getElementById(`edit-y-${d.id}-${idx}`); if(ey) ey.value = l93[1].toFixed(2);
             const elZ = document.getElementById(`edit-z-${d.id}-${idx}`);
             if(elZ && d.ptsGPS[idx].customZ === undefined) { const z = getZ(l93); if(z!==null) elZ.placeholder = z.toFixed(2); }
         });
@@ -250,7 +357,6 @@ function generateEditorTable(d, isProj, pid=null) {
 
 function updateDrawUI() {
     const list = document.getElementById('measure-list'); if(!list) return; list.innerHTML = '';
-    
     list.innerHTML = `<button type="button" onclick="showMulti3DSelector()" style="width:100%; margin-bottom:10px; background:#8e44ad; color:#fff; border:none; padding:8px; cursor:pointer; font-weight:bold; border-radius:3px; box-shadow: 0 2px 5px rgba(0,0,0,0.3);">👁️ Comparer surfaces en 3D</button>`;
     
     drawStore.forEach(d => {
@@ -264,6 +370,13 @@ function updateDrawUI() {
                 <button type="button" onclick="generate3DView(${d.id})" style="flex:1; min-width:100%; font-size:0.8em; font-weight:bold; background:#34495e; color:#fff; border:1px solid #555; cursor:pointer; padding:5px; margin-top:2px; border-radius:3px;">👁️ Lancer Vue 3D</button>
             </div>`;
         
+        let extraEditBtns = d.isEditing && d.type !== 'circle' ? `
+            <div style="display:flex; gap:5px; margin-top:5px;">
+                <button type="button" onclick="activateAddPoint()" style="flex:1; background:#f39c12; color:#fff; border:none; padding:4px; font-size:11px; border-radius:3px; cursor:pointer; font-weight:bold;">➕ Ajouter pt</button>
+                <button type="button" onclick="toggleHandles()" style="flex:1; background:#8e44ad; color:#fff; border:none; padding:4px; font-size:11px; border-radius:3px; cursor:pointer; font-weight:bold;">👁️ Voir/Masquer pts</button>
+            </div>
+        ` : '';
+
         list.innerHTML += `<div class="card" style="border-left:4px solid ${d.color}; margin-bottom:8px;">
             <div class="card-header">
                 <div style="display:flex; align-items:center;">
@@ -274,24 +387,33 @@ function updateDrawUI() {
                 <button type="button" class="btn-del" onclick="deleteDraw(${d.id})">✕</button>
             </div>
             <div id="stats-${d.id}" style="font-size:12px; margin:5px 0; color:#eee; background:#222; padding:6px; border-radius:3px;">${d.statsHtml || ''}</div>
+            
             <button type="button" onclick="toggleEditMode(${d.id})" style="width:100%; background:${d.isEditing?'#27ae60':'#7f8c8d'}; color:#fff; border:none; padding:5px; cursor:pointer; border-radius:3px; font-weight:bold; display:${d.type==='circle'?'none':'block'}">
                 ${d.isEditing ? '✅ Fin édition' : '✏️ Éditer les points'}
             </button>
+            ${extraEditBtns}
             ${generateEditorTable(d, false)}
             ${btns}
         </div>`;
     });
 }
 
-window.deleteDraw = (id) => { const d = drawStore.find(x => x.id === id); map.removeLayer(d.layer); if(d.editGroup) map.removeLayer(d.editGroup); drawStore = drawStore.filter(x => x.id !== id); updateDrawUI(); };
-window.renameDraw = (id) => { const d = drawStore.find(x => x.id === id); const n = prompt("Nom :", d.name); if(n){d.name=n; updateDrawUI();} };
+window.deleteDraw = (id) => { 
+    const idx = drawStore.findIndex(x => x.id === id);
+    if(idx > -1) {
+        const d = drawStore[idx];
+        if(d.layer) map.removeLayer(d.layer);
+        if(d.editGroup) map.removeLayer(d.editGroup);
+        drawStore.splice(idx, 1);
+        updateDrawUI();
+    }
+};
+window.renameDraw = (id) => { const d = drawStore.find(x => x.id === id); const n = prompt("Nouveau nom :", d.name); if(n){d.name=n; updateDrawUI();} };
 window.toggleDraw = (id) => { const d = drawStore.find(x => x.id === id); d.visible = !d.visible; if(d.visible) { d.layer.addTo(map); if(d.isEditing) makeEditable(d); } else { map.removeLayer(d.layer); if(d.editGroup) d.editGroup.clearLayers(); } };
 window.changeColor = (id, color) => { const d = drawStore.find(x => x.id === id); d.color = color; d.layer.setStyle({color}); updateDrawUI(); };
-
 // ==========================================
 // 6. GÉOMÉTRIE AVANCÉE ET CALCULS DE VOLUMES
 // ==========================================
-
 function isPointInPolygon(point, vs) {
     let x = point[0], y = point[1], inside = false;
     for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
@@ -302,7 +424,6 @@ function isPointInPolygon(point, vs) {
     return inside;
 }
 
-// --- MOTEUR ABSOLU : TRIANGULATION DE DELAUNAY (TIN) ---
 window.TriangulateDelaunay = (pts, polygonL93) => {
     let n = pts.length; if(n < 3) return [];
     let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
@@ -311,13 +432,11 @@ window.TriangulateDelaunay = (pts, polygonL93) => {
     let dx = maxX - minX, dy = maxY - minY, dmax = Math.max(dx, dy);
     let midx = (minX + maxX)/2, midy = (minY + maxY)/2;
     
-    // Super-triangle englobant
     let p1 = {x: midx - 20*dmax, y: midy - dmax, z:0, id:-1};
     let p2 = {x: midx, y: midy + 20*dmax, z:0, id:-2};
     let p3 = {x: midx + 20*dmax, y: midy - dmax, z:0, id:-3};
     let tris = [ [p1, p2, p3] ];
 
-    // Algorithme Bowyer-Watson
     for(let i=0; i<n; i++) {
         let pt = pts[i]; pt.id = i;
         let badTris = [];
@@ -350,7 +469,6 @@ window.TriangulateDelaunay = (pts, polygonL93) => {
         for(let edge of polygonEdges) tris.push([edge[0], edge[1], pt]);
     }
 
-    // Nettoyage et filtrage strict à l'intérieur du polygone
     let finalTris = [];
     for(let tri of tris) {
         if (tri[0].id < 0 || tri[1].id < 0 || tri[2].id < 0) continue;
@@ -367,7 +485,7 @@ window.IsPointInTri = (px, py, ax, ay, bx, by, cx, cy) => {
     let d11 = v1x * v1x + v1y * v1y, d12 = v1x * v2x + v1y * v2y;
     let inv = 1 / (d00 * d11 - d01 * d01);
     let u = (d11 * d02 - d01 * d12) * inv, v = (d00 * d12 - d01 * d02) * inv;
-    return (u >= -0.05) && (v >= -0.05) && (u + v <= 1.05); // Tolérance pour les bords
+    return (u >= -0.05) && (v >= -0.05) && (u + v <= 1.05);
 };
 
 window.GetZOnTriangle = (x, y, A, B, C) => {
@@ -378,7 +496,6 @@ window.GetZOnTriangle = (x, y, A, B, C) => {
     return A.z - (Nx * (x - A.x) + Ny * (y - A.y)) / Nz;
 };
 
-// Courbe lissée IDW classique
 window.GetSmoothZ = (x, y, borderPts) => {
     let sumZ = 0, sumW = 0;
     for (let pt of borderPts) {
@@ -457,10 +574,10 @@ window.calculateVolume = (id, type) => {
         recalculateStats(d);
     }, 50);
 };
-// ==========================================
-// 7. VUE 3D PARFAITE (DELAUNAY SANS FAILLES)
-// ==========================================
 
+// ==========================================
+// 7. VUE 3D PARFAITE ET MULTIVUE
+// ==========================================
 window.close3DWindow = () => {
     document.getElementById('window-3d').style.display = 'none';
     if (cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; }
@@ -472,8 +589,6 @@ window.open3DInNewTab = () => {
     if (!plotDiv || !plotDiv.data) return alert("Veuillez d'abord générer une vue 3D.");
     
     const newTab = window.open('', '_blank');
-    
-    // On copie le HTML du panneau de contrôle, mais on redirige les clics vers 'plot-fullscreen' au lieu de 'plot-3d'
     let controlsHtml = controlsDiv ? controlsDiv.innerHTML.replace(/'plot-3d'/g, "'plot-fullscreen'") : '';
     
     newTab.document.write(`
@@ -544,7 +659,6 @@ window.generate3DView = (id) => {
         let borderPtsWithZ = [];
         l93Pts.forEach((p, i) => { let z = d.ptsGPS[i].customZ !== undefined ? d.ptsGPS[i].customZ : getZ(p); if (z !== null) borderPtsWithZ.push({ x: p[0], y: p[1], z: z }); });
 
-        // La magie Delaunay opère !
         let triangles = window.TriangulateDelaunay(borderPtsWithZ, l93Pts);
 
         let step = 0.25; 
@@ -572,7 +686,6 @@ window.generate3DView = (id) => {
                         let d2=(x-cx)**2+(y-cy)**2;
                         if(d2 < bestDist) { bestDist = d2; bestTri = tri; }
                     }
-                    // Si on touche exactement le bord, le pixel attrape la facette adjacente la plus proche
                     if (zP === null && bestTri) zP = window.GetZOnTriangle(x, y, bestTri[0], bestTri[1], bestTri[2]);
                     
                     rowPlan.push(zP);
@@ -737,62 +850,269 @@ window.generateMulti3DViewAdaptive = (featuresToPlot) => {
     }, 100);
 };
 // ==========================================
-// 8. PROFIL ALTIMÉTRIQUE AVEC SUIVI
+// 8. PROFIL ALTIMÉTRIQUE (DESSIN CAO, CALCUL DÉBLAI/REMBLAI & EXPORT CSV)
 // ==========================================
-window.generateProfileById = (id) => { currentProfileDrawId = id; generateProfile(drawStore.find(x=>x.id===id) || projectStore.flatMap(p=>p.features).find(f=>f.id===id)); };
+window.currentProfileDrawId = null;
+window.isDrawingOnProfile = false;
+window.activeDragIndex = null;
+
+window.generateProfileById = (id) => { 
+    currentProfileDrawId = id; 
+    generateProfile(drawStore.find(x=>x.id===id) || projectStore.flatMap(p=>p.features).find(f=>f.id===id)); 
+};
+
+window.toggleProfileDraw = () => {
+    window.isDrawingOnProfile = !window.isDrawingOnProfile;
+    const btnDraw = document.getElementById('btn-prof-draw');
+    const btnClear = document.getElementById('btn-prof-clear');
+    
+    if (window.isDrawingOnProfile) {
+        btnDraw.style.background = '#2980b9';
+        btnDraw.innerText = '✅ Valider';
+        btnClear.style.display = 'block';
+        document.getElementById('profileChart').style.cursor = 'crosshair';
+    } else {
+        btnDraw.style.background = '#27ae60';
+        btnDraw.innerText = '✏️ Éditer Projet';
+        btnClear.style.display = 'none';
+        document.getElementById('profileChart').style.cursor = 'default';
+        window.activeDragIndex = null; 
+    }
+};
+
+window.clearProfileDraw = () => {
+    let d = drawStore.find(x=>x.id===window.currentProfileDrawId) || projectStore.flatMap(p=>p.features).find(f=>f.id===window.currentProfileDrawId);
+    if(d && confirm("Effacer toute la ligne de projet ?")) {
+        d.customProfilePts = [];
+        if(chartInstance && chartInstance.data.datasets[1]) {
+            updateProfileUI(d, chartInstance.data.datasets[0].data);
+        }
+    }
+};
+
+function calculateProfileArea(terrainData, projectData) {
+    if (!projectData || projectData.length < 2) return { cut: 0, fill: 0 };
+    let cutArea = 0, fillArea = 0; 
+
+    for (let i = 0; i < projectData.length - 1; i++) {
+        let x1 = projectData[i].x, x2 = projectData[i+1].x;
+        let p1 = projectData[i].y, p2 = projectData[i+1].y;
+        let t1 = getTerrainZAt(terrainData, x1), t2 = getTerrainZAt(terrainData, x2);
+        
+        let h = x2 - x1;
+        if (h <= 0) continue;
+
+        let diff1 = t1 - p1; 
+        let diff2 = t2 - p2;
+
+        if (diff1 >= 0 && diff2 >= 0) {
+            cutArea += ((diff1 + diff2) / 2) * h;
+        } else if (diff1 <= 0 && diff2 <= 0) {
+            fillArea += ((Math.abs(diff1) + Math.abs(diff2)) / 2) * h;
+        } else {
+            let k = Math.abs(diff1) / (Math.abs(diff1) + Math.abs(diff2));
+            let h1 = k * h, h2 = (1 - k) * h;
+            if (diff1 > 0) { 
+                cutArea += (diff1 / 2) * h1; fillArea += (Math.abs(diff2) / 2) * h2;
+            } else { 
+                fillArea += (Math.abs(diff1) / 2) * h1; cutArea += (diff2 / 2) * h2;
+            }
+        }
+    }
+    return { cut: cutArea, fill: fillArea };
+}
+
+function getTerrainZAt(data, x) {
+    let pt = data.find(p => p.x === x); if (pt) return pt.y;
+    for (let i = 0; i < data.length - 1; i++) {
+        if (x >= data[i].x && x <= data[i+1].x) {
+            let t = (x - data[i].x) / (data[i+1].x - data[i].x);
+            return data[i].y + t * (data[i+1].y - data[i].y);
+        }
+    }
+    return 0;
+}
+
+function updateProfileUI(d, terrainData) {
+    if(!chartInstance) return;
+    chartInstance.update('none');
+    const areas = calculateProfileArea(terrainData, d.customProfilePts);
+    let info = document.getElementById('profile-info-area');
+    
+    if(!info) {
+        info = document.createElement('div'); info.id = 'profile-info-area';
+        info.style.cssText = "position:absolute; bottom:40px; right:20px; background:rgba(20,20,20,0.85); padding:10px 15px; border:1px solid #555; border-radius:5px; font-size:13px; z-index:1000; display:flex; flex-direction:column; gap:5px; box-shadow:0 4px 10px rgba(0,0,0,0.5);";
+        document.getElementById('profile-window').appendChild(info);
+    }
+    
+    if (areas.cut > 0 || areas.fill > 0) {
+        info.innerHTML = `
+            <span style="color:#3498db;">📉 Déblai : <b>${areas.cut.toFixed(2)} m²</b></span>
+            <span style="color:#e67e22;">📈 Remblai : <b>${areas.fill.toFixed(2)} m²</b></span>
+            <hr style="margin:4px 0; border:0; border-top:1px solid #777;">
+            <span style="color:#f1c40f;">⚖️ Bilan : <b>${Math.abs(areas.cut - areas.fill).toFixed(2)} m²</b> ${(areas.cut > areas.fill) ? '(Excédent)' : '(Manque)'}</span>
+        `;
+        info.style.display = 'flex';
+    } else {
+        info.style.display = 'none';
+    }
+    d.lastProfileArea = areas; 
+}
 
 function generateProfile(d) {
     if(!d) return; document.getElementById('profile-window').style.display='block';
-    const ctx = document.getElementById('profileChart').getContext('2d');
-    const l93 = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
+    const canvas = document.getElementById('profileChart');
+    const ctx = canvas.getContext('2d');
     
+    let toolsDiv = document.getElementById('profile-custom-tools');
+    const canvasParent = canvas.parentNode;
+    canvasParent.style.position = 'relative'; 
+    
+    if(!toolsDiv) {
+        toolsDiv = document.createElement('div');
+        toolsDiv.id = 'profile-custom-tools';
+        toolsDiv.style.cssText = "position:absolute; top:10px; right:20px; display:flex; gap:5px; z-index:1000;";
+        toolsDiv.innerHTML = `
+            <button id="btn-prof-draw" onclick="toggleProfileDraw()" style="background:#27ae60; color:white; border:none; padding:4px 8px; font-size:11px; border-radius:3px; cursor:pointer; font-weight:bold; box-shadow: 0 2px 5px rgba(0,0,0,0.5);">✏️ Dessiner Projet</button>
+            <button id="btn-prof-clear" onclick="clearProfileDraw()" style="display:none; background:#c0392b; color:white; border:none; padding:4px 8px; font-size:11px; border-radius:3px; cursor:pointer; font-weight:bold; box-shadow: 0 2px 5px rgba(0,0,0,0.5);">🗑️ Effacer</button>
+        `;
+        canvasParent.insertBefore(toolsDiv, canvas);
+    } else {
+        window.isDrawingOnProfile = false;
+        document.getElementById('btn-prof-draw').style.background = '#27ae60';
+        document.getElementById('btn-prof-draw').innerText = d.customProfilePts && d.customProfilePts.length > 0 ? '✏️ Éditer Projet' : '✏️ Dessiner Projet';
+        document.getElementById('btn-prof-clear').style.display = 'none';
+        canvas.style.cursor = 'default';
+    }
+
+    if(!d.customProfilePts) d.customProfilePts = [];
+
+    const l93 = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
     let data=[], geo=[], dist=0;
     
     let zStart = d.ptsGPS[0].customZ !== undefined ? d.ptsGPS[0].customZ : (getZ(l93[0])||0);
-    data.push({x: 0, y: parseFloat(zStart.toFixed(2))}); 
-    geo.push({lat: d.ptsGPS[0].lat, lng: d.ptsGPS[0].lng}); // Coordonnées parfaites
+    data.push({x: 0.00, y: parseFloat(zStart.toFixed(2))}); geo.push({lat: d.ptsGPS[0].lat, lng: d.ptsGPS[0].lng}); 
     
     for(let i=1; i<l93.length; i++) {
         const dSeg = Math.hypot(l93[i][0]-l93[i-1][0], l93[i][1]-l93[i-1][1]);
-        for(let j=1; j<dSeg; j+=1) {
+        const step = 1; 
+        for(let j=step; j<dSeg; j+=step) {
             const t = j/dSeg; 
-            const x = l93[i-1][0]+(l93[i][0]-l93[i-1][0])*t;
-            const y = l93[i-1][1]+(l93[i][1]-l93[i-1][1])*t;
-            data.push({x: Math.round(dist+j), y: parseFloat((getZ([x,y])||0).toFixed(2))}); 
-            const g = proj4("EPSG:2154","EPSG:4326",[x,y]);
-            geo.push({lat: g[1], lng: g[0]});
+            const x = l93[i-1][0]+(l93[i][0]-l93[i-1][0])*t; const y = l93[i-1][1]+(l93[i][1]-l93[i-1][1])*t;
+            let curZ = (d.ptsGPS[i-1].customZ !== undefined && d.ptsGPS[i].customZ !== undefined) 
+                ? d.ptsGPS[i-1].customZ + t * (d.ptsGPS[i].customZ - d.ptsGPS[i-1].customZ) : (getZ([x,y]) || 0);
+            data.push({x: parseFloat((dist+j).toFixed(2)), y: parseFloat(curZ.toFixed(2))}); 
+            geo.push({lat: proj4("EPSG:2154","EPSG:4326",[x,y])[1], lng: proj4("EPSG:2154","EPSG:4326",[x,y])[0]});
         }
         dist += dSeg; 
         let zEnd = d.ptsGPS[i].customZ !== undefined ? d.ptsGPS[i].customZ : (getZ(l93[i])||0);
-        data.push({x: Math.round(dist), y: parseFloat(zEnd.toFixed(2))}); 
+        data.push({x: parseFloat(dist.toFixed(2)), y: parseFloat(zEnd.toFixed(2))}); 
         geo.push({lat: d.ptsGPS[i].lat, lng: d.ptsGPS[i].lng});
     }
     
     if(chartInstance) chartInstance.destroy();
     chartInstance = new Chart(ctx, {
         type:'line', 
-        data:{datasets:[{label:'Altitude Z (m)', data, borderColor:d.color, backgroundColor:d.color+'33', fill:true, pointRadius:0, tension:0.1}]},
+        data: {
+            datasets:[
+                {label:'Terrain Naturel', data, borderColor:d.color, backgroundColor:d.color+'33', fill:true, pointRadius:0, tension:0.1, order: 2},
+                {label:'Projet', data: d.customProfilePts, borderColor:'#f1c40f', backgroundColor:'transparent', fill:false, pointRadius:5, pointHoverRadius:7, pointBackgroundColor:'#f1c40f', showLine:true, tension:0, order: 1}
+            ]
+        },
         options:{ 
             responsive:true, maintainAspectRatio:false, interaction:{mode:'index', intersect:false},
-            plugins: { tooltip: { callbacks: { title: (c) => `Dist: ${c[0].parsed.x} m`, label: (c) => `Z: ${c.parsed.y.toFixed(2)} m` } } },
-            scales: { x: { type: 'linear', title: {display:true, text:'Distance (m)'} } },
+            animation: false,
+            plugins: { tooltip: { callbacks: { title: (c) => `Dist: ${c[0].parsed.x.toFixed(2)} m`, label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(2)} m` } } },
+            scales: { x: { type: 'linear', title: {display:true, text:'Distance géométrique exacte (m)'} } },
             onHover:(e,el)=>{
-                if(el && el.length > 0){ 
-                    const p = geo[el[0].index]; 
-                    updateCursor(p.lat, p.lng);
+                if(!window.isDrawingOnProfile && el && el.length > 0 && el[0].datasetIndex === 0){ 
+                    const p = geo[el[0].index]; if(p) updateCursor(p.lat, p.lng);
                 }
             }
         }
     });
     
-    // Auto-réglage des curseurs
+    canvas.onmousedown = (e) => {
+        if(!window.isDrawingOnProfile) return;
+        const rect = canvas.getBoundingClientRect();
+        const xPixel = e.clientX - rect.left; const yPixel = e.clientY - rect.top;
+        
+        let closestIdx = -1; let minDist = 15; 
+        d.customProfilePts.forEach((pt, idx) => {
+            const ptX = chartInstance.scales.x.getPixelForValue(pt.x);
+            const ptY = chartInstance.scales.y.getPixelForValue(pt.y);
+            const dist = Math.hypot(ptX - xPixel, ptY - yPixel);
+            if (dist < minDist) { minDist = dist; closestIdx = idx; }
+        });
+
+        if (closestIdx > -1) {
+            window.activeDragIndex = closestIdx;
+            canvas.style.cursor = 'grabbing';
+        } else {
+            const xVal = chartInstance.scales.x.getValueForPixel(xPixel);
+            const yVal = chartInstance.scales.y.getValueForPixel(yPixel);
+            if(xVal !== undefined && yVal !== undefined) {
+                d.customProfilePts.push({x: parseFloat(xVal.toFixed(2)), y: parseFloat(yVal.toFixed(2))});
+                d.customProfilePts.sort((a,b) => a.x - b.x); 
+                updateProfileUI(d, data);
+            }
+        }
+    };
+
+    canvas.onmousemove = (e) => {
+        if(window.activeDragIndex !== null && window.isDrawingOnProfile) {
+            const rect = canvas.getBoundingClientRect();
+            const xVal = chartInstance.scales.x.getValueForPixel(e.clientX - rect.left);
+            const yVal = chartInstance.scales.y.getValueForPixel(e.clientY - rect.top);
+            if(xVal !== undefined && yVal !== undefined) {
+                d.customProfilePts[window.activeDragIndex] = {x: parseFloat(xVal.toFixed(2)), y: parseFloat(yVal.toFixed(2))};
+                updateProfileUI(d, data);
+            }
+        }
+    };
+
+    canvas.onmouseup = () => {
+        if(window.activeDragIndex !== null && window.isDrawingOnProfile) {
+            d.customProfilePts.sort((a,b) => a.x - b.x); 
+            updateProfileUI(d, data);
+            window.activeDragIndex = null;
+            canvas.style.cursor = 'crosshair';
+        }
+    };
+
+    canvas.ondblclick = (e) => {
+        if(!window.isDrawingOnProfile) return;
+        const rect = canvas.getBoundingClientRect();
+        const xPixel = e.clientX - rect.left; const yPixel = e.clientY - rect.top;
+        
+        let closestIdx = -1; let minDist = 15;
+        d.customProfilePts.forEach((pt, idx) => {
+            const ptX = chartInstance.scales.x.getPixelForValue(pt.x);
+            const ptY = chartInstance.scales.y.getPixelForValue(pt.y);
+            if (Math.hypot(ptX - xPixel, ptY - yPixel) < minDist) { minDist = Math.hypot(ptX - xPixel, ptY - yPixel); closestIdx = idx; }
+        });
+
+        if(closestIdx > -1) {
+            d.customProfilePts.splice(closestIdx, 1);
+            updateProfileUI(d, data);
+        }
+    };
+
+    canvas.onmouseleave = () => {
+        if(cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; }
+        if(window.activeDragIndex !== null) {
+            d.customProfilePts.sort((a,b) => a.x - b.x);
+            updateProfileUI(d, data);
+            window.activeDragIndex = null;
+        }
+    };
+
+    updateProfileUI(d, data);
     const minZ = Math.min(...data.map(pt=>pt.y)), maxZ = Math.max(...data.map(pt=>pt.y)), maxD = data[data.length-1].x;
     const sXMin=document.getElementById('x-min'), sXMax=document.getElementById('x-max'), sYMin=document.getElementById('y-min'), sYMax=document.getElementById('y-max');
     if(sXMin) { sXMin.max=maxD; sXMax.max=maxD; sXMin.value=0; sXMax.value=maxD; }
     if(sYMin) { sYMin.min=minZ-10; sYMin.max=maxZ+10; sYMax.min=minZ-10; sYMax.max=maxZ+10; sYMin.value=minZ-1; sYMax.value=maxZ+1; }
     window.updateScalesLive();
-
-    document.getElementById('profileChart').onmouseleave = () => { if (cursorMarker) { map.removeLayer(cursorMarker); cursorMarker = null; } };
 }
 
 window.updateScalesLive = () => {
@@ -808,53 +1128,33 @@ window.updateScalesLive = () => {
 };
 
 window.exportChartPNG = () => { const a = document.createElement('a'); a.href = document.getElementById('profileChart').toDataURL('image/png'); a.download = 'profil.png'; a.click(); };
+
 window.exportChartCSV = () => { 
-    let csv = "\ufeffDistance (m)\tAltitude Z (m)\n"; 
-    chartInstance.data.datasets[0].data.forEach(r => { 
-        csv += `${r.x}\t${r.y.toFixed(2).replace('.', ',')}\n`; 
-    }); 
-    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); a.download = 'profil.csv'; a.click(); 
+    if (!chartInstance) return;
+    let csv = "\ufeffDistance (m)\tTerrain Z (m)\tProjet Z (m)\n"; 
+    const terrainData = chartInstance.data.datasets[0].data;
+    const projetData = chartInstance.data.datasets[1] ? chartInstance.data.datasets[1].data : [];
+    
+    let allXs = new Set([...terrainData.map(p=>p.x), ...projetData.map(p=>p.x)]);
+    let sortedXs = Array.from(allXs).sort((a,b) => a - b);
+
+    sortedXs.forEach(x => {
+        let tPt = terrainData.find(p => p.x === x);
+        let pPt = projetData.find(p => p.x === x);
+        let tZ = tPt ? tPt.y.toFixed(2).replace('.', ',') : "";
+        let pZ = pPt ? pPt.y.toFixed(2).replace('.', ',') : "";
+        csv += `${x.toFixed(2).replace('.', ',')}\t${tZ}\t${pZ}\n`; 
+    });
+
+    const a = document.createElement('a'); 
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' })); 
+    a.download = 'profil_et_projet.csv'; 
+    a.click(); 
 };
 
-function updateProjectUI() {
-    const list = document.getElementById('project-list'); if(!list) return; list.innerHTML = '';
-    projectStore.forEach(p => {
-        let fHtml = ''; 
-        p.features.forEach(f => {
-            const btns = f.type==='line' ? 
-                `<button type="button" onclick="generateProfileById(${f.id})" style="width:100%; margin-top:5px; background:#333; color:#fff; border:1px solid #555; padding:5px; cursor:pointer; font-weight:bold; border-radius:3px;">📈 Afficher le profil altimétrique</button>` : 
-                `<div style="display:flex; gap:3px; margin-top:5px; flex-wrap:wrap;">
-                    <button type="button" onclick="calculateVolume(${f.id}, 'hollow')" style="flex:1; font-size:0.75em; background:#3498db; color:#fff; border:none; cursor:pointer; padding:5px; border-radius:3px;">📉 Déblai</button>
-                    <button type="button" onclick="calculateVolume(${f.id}, 'mound')" style="flex:1; font-size:0.75em; background:#e67e22; color:#fff; border:none; cursor:pointer; padding:5px; border-radius:3px;">📈 Remblai</button>
-                    <button type="button" onclick="calculateVolume(${f.id}, 'slope')" style="flex:1; font-size:0.75em; background:#9b59b6; color:#fff; border:none; cursor:pointer; padding:5px; border-radius:3px;">📐 Courbe</button>
-                    <button type="button" onclick="calculateVolume(${f.id}, 'plane')" style="flex:1; font-size:0.75em; background:#1abc9c; color:#fff; border:none; cursor:pointer; padding:5px; border-radius:3px;">📏 Plan</button>
-                    <button type="button" onclick="generate3DView(${f.id})" style="flex:1; min-width:100%; font-size:0.8em; font-weight:bold; background:#34495e; color:#fff; border:1px solid #555; cursor:pointer; padding:5px; margin-top:2px; border-radius:3px;">👁️ Lancer Vue 3D</button>
-                </div>`;
-                
-            fHtml += `<div style="margin-left:5px; border-left:3px solid ${f.color}; padding:5px; background:#1a1a1a; margin-top:5px; border-radius:3px;">
-                <div style="display:flex; align-items:center; justify-content:space-between;">
-                    <div><input type="checkbox" checked onchange="toggleProjectFeature(${p.id}, ${f.id})"> <strong style="margin-left:5px; font-size:1.1em;">${f.name}</strong></div>
-                    <button type="button" onclick="deleteProjectFeature(${p.id}, ${f.id})" style="background:transparent; color:#e74c3c; border:none; cursor:pointer;">✕</button>
-                </div>
-                <div id="stats-proj-${f.id}" style="font-size:12px; margin:5px 0; color:#ddd; background:#222; padding:6px; border-radius:3px;">${f.statsHtml || ''}</div>
-                <button type="button" onclick="toggleEditMode(${f.id}, true, ${p.id})" style="width:100%; background:${f.isEditing?'#27ae60':'#7f8c8d'}; color:#fff; border:none; padding:5px; cursor:pointer; margin-bottom:5px; font-weight:bold; border-radius:3px;">${f.isEditing?'✅ Fin édition':'✏️ Éditer les points'}</button>
-                ${generateEditorTable(f, true, p.id)}
-                ${btns}
-            </div>`;
-        });
-        list.innerHTML += `<div class="card">
-            <div class="card-header">
-                <div><input type="checkbox" ${p.visible ? 'checked' : ''} onchange="toggleProject(${p.id})"><strong style="color:#3498db; font-size:1.1em;">📁 ${p.name}</strong></div>
-                <button type="button" class="btn-del" onclick="deleteProject(${p.id})">✕</button>
-            </div>
-            <details open style="margin-top: 8px;"><summary style="font-size: 0.85em; color: #aaa; cursor:pointer;">Ouvrir/Fermer les calques</summary>${fHtml}</details>
-        </div>`;
-    });
-}
 // ==========================================
-// 9. SOURIS LIVE, DRAG ET REDIMENSIONNEMENT FENÊTRES
+// 9. SOURIS LIVE, DRAG ET REDIMENSIONNEMENT
 // ==========================================
-
 map.on('mousemove', (e)=>{
     if (!e.latlng) return; const l = proj4("EPSG:4326","EPSG:2154",[e.latlng.lng, e.latlng.lat]);
     const elX=document.getElementById('cur-x'), elY=document.getElementById('cur-y'), elZ=document.getElementById('cur-z');
@@ -863,7 +1163,6 @@ map.on('mousemove', (e)=>{
     if(currentTool==='circle' && circleCenter && tempLayer) tempLayer.setRadius(map.distance(circleCenter, e.latlng));
 });
 
-// --- GESTION DU DÉPLACEMENT (DRAG & DROP) ---
 function dragElement(winId, headerId) {
     const win = document.getElementById(winId), header = document.getElementById(headerId);
     let isDragging = false, offsetX = 0, offsetY = 0; if(!header) return;
@@ -889,30 +1188,19 @@ function dragElement(winId, headerId) {
 dragElement('window-3d', 'header-3d'); 
 dragElement('profile-window', 'profile-header');
 
-// --- NOUVEAU : REDIMENSIONNEMENT DE LA VUE 3D ---
 window.addEventListener('load', () => {
     const win3d = document.getElementById('window-3d');
     const plot3d = document.getElementById('plot-3d');
-
     if (win3d && plot3d) {
-        // 1. On injecte les styles CSS pour permettre de redimensionner la fenêtre
         win3d.style.resize = 'both';
         win3d.style.overflow = 'hidden';
         win3d.style.minWidth = '400px';
         win3d.style.minHeight = '300px';
-        
-        // 2. On s'assure que le canvas 3D prend toute la place disponible (moins la barre de titre)
         plot3d.style.width = '100%';
         plot3d.style.height = 'calc(100% - 40px)'; 
-
-        // 3. On observe les changements de taille de la fenêtre en temps réel
         const resizeObserver = new ResizeObserver(() => {
-            // Si le graphique Plotly est bien chargé, on le force à s'adapter à la nouvelle taille
-            if (plot3d.data) {
-                Plotly.Plots.resize('plot-3d');
-            }
+            if (plot3d.data) { Plotly.Plots.resize('plot-3d'); }
         });
-        
         resizeObserver.observe(win3d);
     }
 });
@@ -920,12 +1208,12 @@ window.addEventListener('load', () => {
 // ==========================================
 // 10. SAUVEGARDE ET PROJETS (GAUCHE)
 // ==========================================
-const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzZ-m9rVPuATkiYjccicrtBSrAieSSA_TTqmYpA61SoK4eTj11qesIEpItyys6Vu2GVXQ/exec"; // <--- ⚠️ À REMPLIR
+const SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzZ-m9rVPuATkiYjccicrtBSrAieSSA_TTqmYpA61SoK4eTj11qesIEpItyys6Vu2GVXQ/exec";
 
 window.saveProject = async () => {
     const name = document.getElementById('project-name').value.trim(); 
     if (!name || drawStore.length===0) return alert("Nom de projet et tracés requis dans la colonne de droite.");
-    const data = drawStore.map(d => ({ type:d.type, name:d.name, ptsGPS:d.ptsGPS, color:d.color, center:d.center, radius:d.radius, volumeHtml:d.volumeHtml }));
+    const data = drawStore.map(d => ({ type:d.type, name:d.name, ptsGPS:d.ptsGPS, color:d.color, center:d.center, radius:d.radius, volumeHtml:d.volumeHtml, customProfilePts: d.customProfilePts }));
     const btn = document.querySelector('button[onclick="saveProject()"]'); btn.innerText = "⏳"; btn.disabled = true;
     try {
         const res = await fetch(SCRIPT_URL, { method: "POST", body: JSON.stringify({ projectName: name, projectData: JSON.stringify(data) }) });
@@ -957,7 +1245,7 @@ window.loadProject = async () => {
             const newObj = { 
                 id: Date.now()+Math.random(), type:d.type, name:d.name, layer, 
                 ptsGPS:d.ptsGPS, center:d.center, radius:d.radius, color:d.color, 
-                visible:true, isEditing:false, editGroup:L.layerGroup().addTo(map), volumeHtml: d.volumeHtml 
+                visible:true, isEditing:false, editGroup:L.layerGroup().addTo(map), volumeHtml: d.volumeHtml, customProfilePts: d.customProfilePts 
             };
             newProj.features.push(newObj); recalculateStats(newObj);
         });
@@ -967,7 +1255,6 @@ window.loadProject = async () => {
     } catch(e) { alert("Erreur chargement"); } finally { btn.innerText = "Charger"; btn.disabled = false; }
 };
 
-// --- GESTION DE L'INTERFACE DES PROJETS (GAUCHE) ---
 function updateProjectUI() {
     const list = document.getElementById('project-list'); if(!list) return; list.innerHTML = '';
     projectStore.forEach(p => {
@@ -983,6 +1270,13 @@ function updateProjectUI() {
                     <button type="button" onclick="generate3DView(${f.id})" style="flex:1; min-width:100%; font-size:0.8em; font-weight:bold; background:#34495e; color:#fff; border:1px solid #555; cursor:pointer; padding:5px; margin-top:2px; border-radius:3px;">👁️ Lancer Vue 3D</button>
                 </div>`;
                 
+            let extraEditBtns = f.isEditing && f.type !== 'circle' ? `
+                <div style="display:flex; gap:5px; margin-top:5px;">
+                    <button type="button" onclick="activateAddPoint()" style="flex:1; background:#f39c12; color:#fff; border:none; padding:4px; font-size:11px; border-radius:3px; cursor:pointer; font-weight:bold;">➕ Ajouter pt</button>
+                    <button type="button" onclick="toggleHandles()" style="flex:1; background:#8e44ad; color:#fff; border:none; padding:4px; font-size:11px; border-radius:3px; cursor:pointer; font-weight:bold;">👁️ Voir/Masquer pts</button>
+                </div>
+            ` : '';
+
             fHtml += `<div style="margin-left:5px; border-left:3px solid ${f.color}; padding:5px; background:#1a1a1a; margin-top:5px; border-radius:3px;">
                 <div style="display:flex; align-items:center; justify-content:space-between;">
                     <div><input type="checkbox" checked onchange="toggleProjectFeature(${p.id}, ${f.id})"> <strong style="margin-left:5px; font-size:1.1em;">${f.name}</strong></div>
@@ -990,6 +1284,7 @@ function updateProjectUI() {
                 </div>
                 <div id="stats-proj-${f.id}" style="font-size:12px; margin:5px 0; color:#ddd; background:#222; padding:6px; border-radius:3px;">${f.statsHtml || ''}</div>
                 <button type="button" onclick="toggleEditMode(${f.id}, true, ${p.id})" style="width:100%; background:${f.isEditing?'#27ae60':'#7f8c8d'}; color:#fff; border:none; padding:5px; cursor:pointer; margin-bottom:5px; font-weight:bold; border-radius:3px;">${f.isEditing?'✅ Fin édition':'✏️ Éditer les points'}</button>
+                ${extraEditBtns}
                 ${generateEditorTable(f, true, p.id)}
                 ${btns}
             </div>`;
@@ -1000,23 +1295,18 @@ function updateProjectUI() {
                 <div><input type="checkbox" ${p.visible ? 'checked' : ''} onchange="toggleProject(${p.id})"><strong style="color:#3498db; font-size:1.1em;">📁 ${p.name}</strong></div>
                 <button type="button" class="btn-del" onclick="deleteProject(${p.id})">✕</button>
             </div>
-            
             <button type="button" onclick="copyProjectToWorkspace(${p.id})" style="width:100%; margin-top:5px; background:#f39c12; color:#fff; border:none; padding:6px; border-radius:3px; cursor:pointer; font-weight:bold;">📥 Copier vers l'espace de travail</button>
-            
             <details open style="margin-top: 8px;"><summary style="font-size: 0.85em; color: #aaa; cursor:pointer;">Ouvrir/Fermer les calques</summary>${fHtml}</details>
         </div>`;
     });
 }
 
-// --- FONCTION POUR COPIER UN PROJET VERS LA DROITE ---
 window.copyProjectToWorkspace = (pid) => {
     const p = projectStore.find(x => x.id === pid);
     if (!p) return;
-    
     p.features.forEach(f => {
         const newPts = f.ptsGPS.map(pt => ({ lat: pt.lat, lng: pt.lng, customZ: pt.customZ }));
         const newId = Date.now() + Math.random();
-        
         let layer;
         if (f.type === 'circle') layer = L.circle(f.center, {radius: f.radius, color: f.color, weight: 3}).addTo(map);
         else if (f.type === 'area') layer = L.polygon(newPts, {color: f.color, weight: 3, fillOpacity: 0.3}).addTo(map);
@@ -1026,23 +1316,24 @@ window.copyProjectToWorkspace = (pid) => {
             id: newId, type: f.type, name: f.name + " (Copie)", layer: layer,
             ptsGPS: newPts, center: f.center ? {...f.center} : null, radius: f.radius,
             color: f.color, weight: f.weight || 3, visible: true, isEditing: false,
-            editGroup: L.layerGroup().addTo(map), volumeHtml: f.volumeHtml
+            editGroup: L.layerGroup().addTo(map), volumeHtml: f.volumeHtml, customProfilePts: f.customProfilePts ? [...f.customProfilePts] : []
         };
-        
-        drawStore.unshift(newObj);
-        recalculateStats(newObj);
+        drawStore.unshift(newObj); recalculateStats(newObj);
     });
-    
     updateDrawUI();
     alert(`✅ Projet "${p.name}" copié avec succès dans l'espace de travail à droite !`);
 };
+
+window.toggleProject = (pid) => { const p = projectStore.find(x => x.id === pid); p.visible = !p.visible; p.features.forEach(f => { f.visible = p.visible; if (f.visible) { f.layer.addTo(map); if(f.isEditing) makeEditable(f, true, p.id); } else { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); } }); updateProjectUI(); };
+window.deleteProject = (pid) => { const p = projectStore.find(x => x.id === pid); p.features.forEach(f => { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); }); projectStore = projectStore.filter(x => x.id !== pid); updateProjectUI(); };
+window.toggleProjectFeature = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); f.visible = !f.visible; if (f.visible) { f.layer.addTo(map); if(f.isEditing) makeEditable(f, true, p.id); } else { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); } updateProjectUI(); };
+window.deleteProjectFeature = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); p.features = p.features.filter(x => x.id !== fid); updateProjectUI(); };
+
 // ==========================================
 // 11. AIDE, CAPTURES 3D ET EXPORT RAPPORT PDF COMPLET
 // ==========================================
-
 setTimeout(() => { if(typeof dragElement === 'function') dragElement('help-window', 'help-header'); }, 1000);
 
-// --- SYSTÈME DE CAPTURE 3D MANUELLE ---
 window.pdf3DCaptures = []; 
 
 window.capture3DForPDF = async () => {
@@ -1055,10 +1346,7 @@ window.capture3DForPDF = async () => {
         let imgUrl = await Plotly.toImage(plot3D, {format: 'png', width: 800, height: 600});
         window.pdf3DCaptures.push(imgUrl);
         btn.innerText = `📸 Capturer (${window.pdf3DCaptures.length}/3)`;
-    } catch(e) { 
-        console.error("Erreur capture 3D :", e); 
-        btn.innerText = `📸 Erreur`;
-    }
+    } catch(e) { console.error("Erreur capture 3D :", e); btn.innerText = `📸 Erreur`; }
 };
 
 const originalClose3D = window.close3DWindow;
@@ -1069,7 +1357,6 @@ window.close3DWindow = () => {
     if(originalClose3D) originalClose3D();
 };
 
-// --- MOTEUR DE GÉNÉRATION DU RAPPORT PDF ---
 window.generatePDFReport = async () => {
     let allFeatures = [...drawStore, ...projectStore.flatMap(p => p.features.filter(f => f.visible))];
     if (allFeatures.length === 0) return alert("Veuillez tracer ou charger au moins un élément avant de générer un rapport.");
@@ -1084,7 +1371,6 @@ window.generatePDFReport = async () => {
         const pageWidth = doc.internal.pageSize.getWidth();
         let yPos = 20;
 
-        // --- EN-TÊTE ---
         doc.setFont("helvetica", "bold"); doc.setFontSize(22); doc.setTextColor(41, 128, 185);
         doc.text("RAPPORT TOPOGRAPHIQUE", pageWidth / 2, yPos, { align: "center" });
         yPos += 10;
@@ -1092,7 +1378,6 @@ window.generatePDFReport = async () => {
         doc.text(`Généré le : ${new Date().toLocaleString('fr-FR')}`, pageWidth / 2, yPos, { align: "center" });
         yPos += 15;
 
-        // --- 1. CARTE CENTRÉE (Maintenant avec les tracés visibles grâce à preferCanvas) ---
         doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.setTextColor(0, 0, 0);
         doc.text("1. Vue Planimétrique (Carte)", 15, yPos);
         yPos += 8;
@@ -1107,17 +1392,12 @@ window.generatePDFReport = async () => {
         }
 
         const mapDiv = document.getElementById('map');
-        const canvasMap = await html2canvas(mapDiv, { 
-            useCORS: true, 
-            logging: false,
-            ignoreElements: (el) => el.classList.contains('leaflet-control-container') 
-        });
+        const canvasMap = await html2canvas(mapDiv, { useCORS: true, logging: false, ignoreElements: (el) => el.classList.contains('leaflet-control-container') });
         const mapHeight = (canvasMap.height * (pageWidth - 30)) / canvasMap.width;
         let finalMapHeight = mapHeight > 100 ? 100 : mapHeight; 
         doc.addImage(canvasMap.toDataURL("image/jpeg", 0.8), 'JPEG', 15, yPos, pageWidth - 30, finalMapHeight);
         yPos += finalMapHeight + 15;
 
-        // --- 2. TABLEAU RÉCAPITULATIF ---
         if (yPos > 240) { doc.addPage(); yPos = 20; }
         doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text("2. Récapitulatif des tracés", 15, yPos);
         yPos += 8;
@@ -1143,21 +1423,15 @@ window.generatePDFReport = async () => {
         allFeatures.forEach(d => {
             const l93 = d.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
             let zMin = Infinity, zMax = -Infinity, perim = 0, area = 0;
-            
             l93.forEach((p, i) => {
                 let z = d.ptsGPS[i].customZ !== undefined ? d.ptsGPS[i].customZ : getZ(p);
                 if(z !== null) { if(z < zMin) zMin = z; if(z > zMax) zMax = z; }
             });
-            
-            if (d.type === 'circle') {
-                perim = 2 * Math.PI * d.radius; area = Math.PI * d.radius * d.radius;
-            } else if (d.type === 'line') {
-                for (let i = 1; i < l93.length; i++) perim += Math.hypot(l93[i][0]-l93[i-1][0], l93[i][1]-l93[i-1][1]);
-                area = 0;
-            } else {
+            if (d.type === 'circle') { perim = 2 * Math.PI * d.radius; area = Math.PI * d.radius * d.radius; } 
+            else if (d.type === 'line') { for (let i = 1; i < l93.length; i++) perim += Math.hypot(l93[i][0]-l93[i-1][0], l93[i][1]-l93[i-1][1]); area = 0; } 
+            else {
                 for (let i = 0; i < l93.length; i++) { 
-                    let j = (i+1) % l93.length; 
-                    area += l93[i][0]*l93[j][1] - l93[j][0]*l93[i][1]; 
+                    let j = (i+1) % l93.length; area += l93[i][0]*l93[j][1] - l93[j][0]*l93[i][1]; 
                     perim += Math.hypot(l93[j][0] - l93[i][0], l93[j][1] - l93[i][1]);
                 }
                 area = Math.abs(area)/2;
@@ -1176,7 +1450,6 @@ window.generatePDFReport = async () => {
         tableHtml += `</tbody></table>`;
         tempDiv.innerHTML += tableHtml;
 
-        // --- 3. ÉTIQUETTES DE MESURES ---
         tempDiv.innerHTML += `<h3 style="color:#2c3e50; border-bottom:2px solid #ccc; padding-bottom:5px;">Détail des Volumes et Mesures</h3>`;
         allFeatures.forEach(d => {
             let cleanStats = (d.statsHtml || "Aucune donnée")
@@ -1198,47 +1471,53 @@ window.generatePDFReport = async () => {
         doc.addImage(imgTableStats, 'PNG', 15, yPos, pageWidth - 30, tableStatsHeight);
         yPos += tableStatsHeight + 20;
 
-        // --- 4. PROFILS ALTIMÉTRIQUES SCANNÉS À HAUTE RÉSOLUTION ---
-        let lines = allFeatures.filter(d => d.type === 'line');
+        let lines = allFeatures.filter(d => d.type === 'line'); 
         if (lines.length > 0) {
             if (yPos > 240) { doc.addPage(); yPos = 20; }
-            doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text("3. Profils Altimétriques (Coupes)", 15, yPos);
+            doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text("3. Profils Altimétriques (Coupes & Projets)", 15, yPos);
             yPos += 10;
 
             for (let line of lines) {
                 let dists = [], zVals = [], totalDist = 0;
                 const l93 = line.ptsGPS.map(p => proj4("EPSG:4326", "EPSG:2154", [p.lng, p.lat]));
-                
-                // Le scan magique tous les 1 mètre
+
+                dists.push(0.00); 
+                zVals.push(parseFloat((line.ptsGPS[0].customZ !== undefined ? line.ptsGPS[0].customZ : (getZ(l93[0])||0)).toFixed(2)));
+
                 for (let i = 1; i < l93.length; i++) {
                     let p1 = l93[i-1], p2 = l93[i];
                     let segmentDist = Math.hypot(p2[0]-p1[0], p2[1]-p1[1]);
-                    let steps = Math.max(2, Math.floor(segmentDist)); // Au moins 1 point par mètre
                     
-                    let z1 = line.ptsGPS[i-1].customZ !== undefined ? line.ptsGPS[i-1].customZ : getZ(p1);
-                    let z2 = line.ptsGPS[i].customZ !== undefined ? line.ptsGPS[i].customZ : getZ(p2);
-
-                    for (let j = 0; j <= steps; j++) {
-                        if (i > 1 && j === 0) continue; // Évite le doublon aux angles
-                        let t = j / steps;
+                    const step = 1; 
+                    for(let j=step; j<segmentDist; j+=step) {
+                        let t = j/segmentDist;
                         let curX = p1[0] + t * (p2[0]-p1[0]), curY = p1[1] + t * (p2[1]-p1[1]);
                         
                         let curZ;
                         if (line.ptsGPS[i-1].customZ !== undefined && line.ptsGPS[i].customZ !== undefined) {
-                            curZ = z1 + t * (z2 - z1); // Pente droite parfaite si on force le Z
+                            curZ = line.ptsGPS[i-1].customZ + t * (line.ptsGPS[i].customZ - line.ptsGPS[i-1].customZ);
                         } else {
-                            curZ = getZ([curX, curY]); // On lit le terrain naturel !
-                            if (curZ === null) curZ = (z1 !== null && z2 !== null) ? z1 + t * (z2 - z1) : 0;
+                            curZ = getZ([curX, curY]) || 0; 
                         }
-                        dists.push(totalDist + (t * segmentDist)); zVals.push(curZ);
+                        dists.push(parseFloat((totalDist + j).toFixed(2))); 
+                        zVals.push(parseFloat(curZ.toFixed(2)));
                     }
                     totalDist += segmentDist;
+                    dists.push(parseFloat(totalDist.toFixed(2)));
+                    zVals.push(parseFloat((line.ptsGPS[i].customZ !== undefined ? line.ptsGPS[i].customZ : (getZ(l93[i])||0)).toFixed(2)));
                 }
                 
-                let trace = { x: dists, y: zVals, mode: 'lines', fill: 'tozeroy', type: 'scatter', line: {color: line.color, width: 2}, name: line.name };
+                let traceTerrain = { x: dists, y: zVals, mode: 'lines', fill: 'tozeroy', type: 'scatter', line: {color: line.color, width: 2}, name: 'Terrain Naturel' };
+                let plotData = [traceTerrain];
+
+                if (line.customProfilePts && line.customProfilePts.length > 0) {
+                    let pX = line.customProfilePts.map(p => p.x);
+                    let pY = line.customProfilePts.map(p => p.y);
+                    plotData.push({ x: pX, y: pY, mode: 'lines+markers', type: 'scatter', line: {color: '#f1c40f', width: 2}, marker: {size: 6, color: '#f1c40f'}, name: 'Ligne de Projet' });
+                }
+
                 let layout = { title: { text: `Profil : ${line.name}`, font: {size: 14, color:'black'} }, xaxis: {title: 'Distance (m)', color:'black'}, yaxis: {title: 'Altitude (m)', color:'black'}, margin: {t:40, b:40, l:40, r:20}, plot_bgcolor: '#fff', paper_bgcolor: '#fff' };
-                
-                let imgUrl = await Plotly.toImage({data: [trace], layout: layout}, {format: 'png', width: 800, height: 350});
+                let imgUrl = await Plotly.toImage({data: plotData, layout: layout}, {format: 'png', width: 800, height: 350});
                 
                 if (yPos + 80 > 280) { doc.addPage(); yPos = 20; }
                 doc.addImage(imgUrl, 'PNG', 15, yPos, pageWidth - 30, 75);
@@ -1246,7 +1525,6 @@ window.generatePDFReport = async () => {
             }
         }
 
-        // --- 5. INTÉGRATION DES CAPTURES 3D MANUELLES ---
         if (window.pdf3DCaptures && window.pdf3DCaptures.length > 0) {
             if (yPos > 180) { doc.addPage(); yPos = 20; }
             doc.setFont("helvetica", "bold"); doc.setFontSize(14); doc.text("4. Vues 3D (Captures Manuelles)", 15, yPos);
@@ -1269,44 +1547,17 @@ window.generatePDFReport = async () => {
         btn.disabled = false;
     }
 };
-// ==========================================
-// 12. LANCEMENT DE LA VUE 3D GLOBALE (SCÈNE COMPLÈTE)
-// ==========================================
 
+// ==========================================
+// 12. LANCEMENT DE LA VUE 3D GLOBALE
+// ==========================================
 window.generateGlobal3DView = () => {
-    // 1. On récupère TOUS les tracés (ceux en cours + ceux des projets chargés qui sont visibles)
-    let allFeatures = [
-        ...drawStore, 
-        ...projectStore.flatMap(p => p.features.filter(f => f.visible))
-    ];
-
-    // 2. La 3D ne fonctionne que sur les surfaces et les cercles, on filtre donc les lignes
+    let allFeatures = [ ...drawStore, ...projectStore.flatMap(p => p.features.filter(f => f.visible)) ];
     let areasToPlot = allFeatures.filter(d => d.type === 'area' || d.type === 'circle');
 
-    // 3. Sécurités
-    if (mntStore.filter(m => m.visible).length === 0) {
-        return alert("Veuillez d'abord activer un MNT dans la liste à gauche !");
-    }
-    if (areasToPlot.length === 0) {
-        return alert("Veuillez tracer ou afficher au moins une surface pour générer la 3D Globale.");
-    }
+    if (mntStore.filter(m => m.visible).length === 0) return alert("Veuillez d'abord activer un MNT dans la liste à gauche !");
+    if (areasToPlot.length === 0) return alert("Veuillez tracer ou afficher au moins une surface pour générer la 3D Globale.");
 
-    // 4. Si on n'a qu'une seule surface, on lance la vue 3D classique plus rapide
-    if (areasToPlot.length === 1) {
-        window.generate3DView(areasToPlot[0].id);
-    } 
-    // 5. Si on a plusieurs surfaces, on lance notre moteur Multivue de la Section 7 !
-    else {
-        window.generateMulti3DViewAdaptive(areasToPlot);
-    }
+    if (areasToPlot.length === 1) window.generate3DView(areasToPlot[0].id);
+    else window.generateMulti3DViewAdaptive(areasToPlot);
 };
-// --- ACTIONS SUR LES PROJETS (AFFICHAGE / SUPPRESSION) ---
-window.toggleProject = (pid) => { const p = projectStore.find(x => x.id === pid); p.visible = !p.visible; p.features.forEach(f => { f.visible = p.visible; if (f.visible) { f.layer.addTo(map); if(f.isEditing) makeEditable(f, true, p.id); } else { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); } }); updateProjectUI(); };
-window.deleteProject = (pid) => { const p = projectStore.find(x => x.id === pid); p.features.forEach(f => { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); }); projectStore = projectStore.filter(x => x.id !== pid); updateProjectUI(); };
-window.toggleProjectFeature = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); f.visible = !f.visible; if (f.visible) { f.layer.addTo(map); if(f.isEditing) makeEditable(f, true, p.id); } else { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); } updateProjectUI(); };
-window.deleteProjectFeature = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); p.features = p.features.filter(x => x.id !== fid); updateProjectUI(); };
-   
-window.toggleProject = (pid) => { const p = projectStore.find(x => x.id === pid); p.visible = !p.visible; p.features.forEach(f => { f.visible = p.visible; if (f.visible) { f.layer.addTo(map); if(f.isEditing) makeEditable(f, true, p.id); } else { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); } }); updateProjectUI(); };
-window.deleteProject = (pid) => { const p = projectStore.find(x => x.id === pid); p.features.forEach(f => { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); }); projectStore = projectStore.filter(x => x.id !== pid); updateProjectUI(); };
-window.toggleProjectFeature = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); f.visible = !f.visible; if (f.visible) { f.layer.addTo(map); if(f.isEditing) makeEditable(f, true, p.id); } else { map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); } updateProjectUI(); };
-window.deleteProjectFeature = (pid, fid) => { const p = projectStore.find(x => x.id === pid); const f = p.features.find(x => x.id === fid); map.removeLayer(f.layer); if(f.editGroup) f.editGroup.clearLayers(); p.features = p.features.filter(x => x.id !== fid); updateProjectUI(); };

@@ -5,7 +5,7 @@
 'use strict';
 
 let tmpLayer = null, tmpPts = [], circleCenter = null;
-let addPointTarget = null;
+let addPointTarget = null, addRingTarget = null;
 
 /* ---------------- Cycle de tracé ---------------- */
 
@@ -26,8 +26,25 @@ function startTool(tool) {
   APP.map.getContainer().style.cursor = 'crosshair';
 }
 
+/**
+ * Ajoute une emprise supplémentaire à une surface existante.
+ * La cubature portera ensuite sur l'union de toutes les emprises.
+ */
+function startAddRing(id) {
+  const d = findFeature(id);
+  if (!d || (d.type !== 'area' && d.type !== 'circle')) return;
+  cancelDraw();
+  const target = d;
+  APP.tool = 'area';
+  tmpPts = [];
+  addRingTarget = target;
+  showDrawBar(true);
+  setDrawHint(`Nouvelle emprise pour « ${target.name} » — cliquez le contour, puis « Terminer ».`);
+  APP.map.getContainer().style.cursor = 'crosshair';
+}
+
 function cancelDraw() {
-  APP.tool = null; tmpPts = []; circleCenter = null; addPointTarget = null;
+  APP.tool = null; tmpPts = []; circleCenter = null; addPointTarget = null; addRingTarget = null;
   if (tmpLayer) { APP.map.removeLayer(tmpLayer); tmpLayer = null; }
   document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('active'));
   showDrawBar(false);
@@ -96,6 +113,18 @@ function finalizeDraw() {
   const min = APP.tool === 'area' ? 3 : 2;
   if (tmpPts.length < min) { toast(`Il faut au moins ${min} points.`, 'warn'); return; }
 
+  if (addRingTarget) {
+    const target = addRingTarget;
+    if (!target.extraRings) target.extraRings = [];
+    target.extraRings.push(tmpPts.map(p => ({ lat: p.lat, lng: p.lng })));
+    // Un cercle qui reçoit une seconde emprise devient une surface composée
+    if (target.type === 'circle') { target.type = 'area'; delete target.center; delete target.radius; }
+    cancelDraw();
+    redrawFeature(target); makeEditable(target); refreshStats(target); renderDrawList();
+    toast(`Emprise ajoutée : ${GEOM.ringsOf(target).length} au total. Relancez la cubature.`, 'ok');
+    return;
+  }
+
   const type = APP.tool;
   const d = newFeature({
     type,
@@ -157,7 +186,9 @@ function redrawFeature(d) {
   if (d.type === 'point') {
     d.layer = L.circleMarker(d.ptsGPS[0], { radius: 7, color: '#fff', weight: 2, fillColor: d.color, fillOpacity: 1 });
   } else if (d.type === 'circle' || d.type === 'area') {
-    d.layer = L.polygon(d.ptsGPS, st);
+    const rings = GEOM.ringsOf(d);
+    // Plusieurs emprises = multi-polygone (chaque anneau est une enveloppe, pas un trou)
+    d.layer = rings.length > 1 ? L.polygon(rings.map(r => [r]), st) : L.polygon(rings[0], st);
   } else {
     d.layer = L.polyline(d.ptsGPS, { color: d.color, weight: (d.weight || 3) + 1 });
   }
@@ -211,6 +242,7 @@ function statsHtml(d) {
     rows.push(['Altitudes', zRange]);
   } else {
     if (d.type === 'circle') rows.push(['Rayon', fmtM(d.radius)]);
+    if (s.nParts > 1) rows.push(['Emprises', `${s.nParts}${s.hasOverlap ? ` <small>(recouvrement déduit)</small>` : ''}`]);
     rows.push(['Périmètre', fmtM(s.perimeter2D)]);
     rows.push(['Surface horizontale', fmtM2(s.areaH)]);
     rows.push(['Surface développée', `${fmtM2(s.areaDev)} <small>(+${fmt(s.areaH > 0 ? (s.areaDev / s.areaH - 1) * 100 : 0, 1)} %)</small>`]);
@@ -256,20 +288,34 @@ function makeEditable(d) {
     return;
   }
 
-  d.ptsGPS.forEach((pt, i) => {
-    const m = L.marker(pt, { draggable: true, icon: handleIcon(i + 1) }).addTo(d.editGroup);
-    m.on('drag', ev => {
-      d.ptsGPS[i].lat = ev.latlng.lat; d.ptsGPS[i].lng = ev.latlng.lng;
-      if (d.layer && d.layer.setLatLngs) d.layer.setLatLngs(d.ptsGPS);
-      const msg = [];
-      if (i > 0) msg.push(`← ${fmt(APP.map.distance(d.ptsGPS[i - 1], ev.latlng), 1)} m`);
-      if (i < d.ptsGPS.length - 1) msg.push(`→ ${fmt(APP.map.distance(ev.latlng, d.ptsGPS[i + 1]), 1)} m`);
-      m.bindTooltip(msg.join('  '), { permanent: true, direction: 'top', offset: [0, -12] }).openTooltip();
-      refreshStats(d);
+  const rings = GEOM.ringsOf(d);
+  const colors = ['#e74c3c', '#2980b9', '#16a085', '#8e44ad', '#d35400'];
+  rings.forEach((ring, ri) => {
+    const col = colors[ri % colors.length];
+    ring.forEach((pt, i) => {
+      const m = L.marker(pt, { draggable: true, icon: handleIcon(i + 1, col) }).addTo(d.editGroup);
+      m.on('drag', ev => {
+        ring[i].lat = ev.latlng.lat; ring[i].lng = ev.latlng.lng;
+        redrawGeometry(d);
+        const msg = [];
+        if (i > 0) msg.push(`← ${fmt(APP.map.distance(ring[i - 1], ev.latlng), 1)} m`);
+        if (i < ring.length - 1) msg.push(`→ ${fmt(APP.map.distance(ev.latlng, ring[i + 1]), 1)} m`);
+        m.bindTooltip(msg.join('  '), { permanent: true, direction: 'top', offset: [0, -12] }).openTooltip();
+        refreshStats(d);
+      });
+      m.on('dragend', () => { m.unbindTooltip(); refreshStats(d); renderDrawList(); if (PROFILE.isOpenFor(d)) PROFILE.open(d); });
+      m.on('contextmenu', () => removeVertex(d, ri, i));
     });
-    m.on('dragend', () => { m.unbindTooltip(); refreshStats(d); renderDrawList(); if (PROFILE.isOpenFor(d)) PROFILE.open(d); });
-    m.on('contextmenu', () => removeVertex(d, i));
   });
+}
+
+/** Met à jour la géométrie affichée sans reconstruire la couche. */
+function redrawGeometry(d) {
+  if (!d.layer) return;
+  if (d.type === 'area' || d.type === 'circle') {
+    const rings = GEOM.ringsOf(d);
+    d.layer.setLatLngs(rings.length > 1 ? rings.map(r => [r]) : rings[0]);
+  } else if (d.layer.setLatLngs) d.layer.setLatLngs(d.ptsGPS);
 }
 
 function handleIcon(label, color = '#e74c3c') {
@@ -294,10 +340,21 @@ function setCircleRadius(id, r) {
   const lbl = document.getElementById('rad-lbl-' + id); if (lbl) lbl.textContent = fmt(d.radius, 1) + ' m';
 }
 
-function removeVertex(d, i) {
+function removeVertex(d, ri, i) {
+  const rings = GEOM.ringsOf(d);
+  const ring = rings[ri] || d.ptsGPS;
   const min = d.type === 'area' ? 3 : 2;
-  if (d.ptsGPS.length <= min) { toast(`Un ${d.type === 'area' ? 'polygone' : 'tracé'} doit garder ${min} sommets.`, 'warn'); return; }
-  d.ptsGPS.splice(i, 1);
+  if (ring.length <= min) { toast(`Un ${d.type === 'area' ? 'polygone' : 'tracé'} doit garder ${min} sommets.`, 'warn'); return; }
+  ring.splice(i, 1);
+  redrawFeature(d); makeEditable(d); refreshStats(d); renderDrawList();
+}
+function removeVertexById(id, ri, i) { const d = findFeature(id); if (d) removeVertex(d, ri, i); }
+
+/** Supprime une emprise secondaire d'une surface composée. */
+function removeRing(id, ri) {
+  const d = findFeature(id); if (!d || ri < 1) return;
+  if (!confirm(`Retirer l'emprise ${ri + 1} de « ${d.name} » ?`)) return;
+  d.extraRings.splice(ri - 1, 1);
   redrawFeature(d); makeEditable(d); refreshStats(d); renderDrawList();
 }
 
@@ -309,22 +366,24 @@ function activateAddPoint(id) {
 }
 
 /** Saisie numérique X / Y / Z depuis le tableau d'édition */
-function applyVertexEdit(id, i) {
+function applyVertexEdit(id, ri, i) {
   const d = findFeature(id); if (!d) return;
-  const gx = document.getElementById(`ed-x-${id}-${i}`);
-  const gy = document.getElementById(`ed-y-${id}-${i}`);
-  const gz = document.getElementById(`ed-z-${id}-${i}`);
+  const ring = GEOM.ringsOf(d)[ri]; if (!ring) return;
+  const gx = document.getElementById(`ed-x-${id}-${ri}-${i}`);
+  const gy = document.getElementById(`ed-y-${id}-${ri}-${i}`);
+  const gz = document.getElementById(`ed-z-${id}-${ri}-${i}`);
+  if (!gx || !gy || !gz) return;
   const x = parseFloat((gx.value || '').replace(',', '.'));
   const y = parseFloat((gy.value || '').replace(',', '.'));
   if (!Number.isNaN(x) && !Number.isNaN(y)) {
     const g = toWGS(x, y);
-    d.ptsGPS[i].lat = g.lat; d.ptsGPS[i].lng = g.lng;
+    ring[i].lat = g.lat; ring[i].lng = g.lng;
   }
   const zs = (gz.value || '').trim().replace(',', '.');
-  if (zs === '') delete d.ptsGPS[i].customZ;
-  else { const z = parseFloat(zs); if (!Number.isNaN(z)) d.ptsGPS[i].customZ = z; }
+  if (zs === '') delete ring[i].customZ;
+  else { const z = parseFloat(zs); if (!Number.isNaN(z)) ring[i].customZ = z; }
 
-  if (d.layer && d.layer.setLatLngs) d.layer.setLatLngs(d.ptsGPS);
+  redrawGeometry(d);
   makeEditable(d); refreshStats(d);
   if (PROFILE.isOpenFor(d)) PROFILE.open(d);
 }
@@ -336,34 +395,37 @@ function setAllZ(id) {
   const v = prompt('Altitude forcée pour TOUS les sommets (vide = revenir au terrain naturel) :', cur);
   if (v === null) return;
   const s = v.trim().replace(',', '.');
-  d.ptsGPS.forEach(p => { if (s === '') delete p.customZ; else p.customZ = parseFloat(s); });
+  GEOM.ringsOf(d).forEach(r => r.forEach(p => { if (s === '') delete p.customZ; else p.customZ = parseFloat(s); }));
   refreshStats(d); renderDrawList();
   if (PROFILE.isOpenFor(d)) PROFILE.open(d);
 }
 
 function vertexTable(d) {
   if (!d.isEditing || d.type === 'circle' || d.type === 'point') return '';
-  const rows = d.ptsGPS.map((pt, i) => {
-    const l = toL93(pt.lng, pt.lat);
-    const zAuto = getZ(l);
-    const zVal = pt.customZ !== undefined ? pt.customZ.toFixed(2) : '';
-    const zPh = isValidZ(zAuto) ? zAuto.toFixed(2) : 'hors MNT';
-    return `<tr>
-      <td class="idx">${i + 1}</td>
-      <td><input inputmode="decimal" id="ed-x-${d.id}-${i}" value="${l[0].toFixed(2)}" onchange="applyVertexEdit(${d.id},${i})"></td>
-      <td><input inputmode="decimal" id="ed-y-${d.id}-${i}" value="${l[1].toFixed(2)}" onchange="applyVertexEdit(${d.id},${i})"></td>
-      <td><input inputmode="decimal" class="zin" id="ed-z-${d.id}-${i}" value="${zVal}" placeholder="${zPh}" onchange="applyVertexEdit(${d.id},${i})"></td>
-      <td><button class="icon-btn" title="Supprimer ce sommet" onclick="removeVertexById(${d.id},${i})">✕</button></td>
-    </tr>`;
-  }).join('');
-  return `<div class="vtx-wrap">
-    <table class="vtx-tbl"><thead><tr><th>N°</th><th>X (L93)</th><th>Y (L93)</th><th>Z forcé</th><th></th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    <div class="hint">Z vide = altitude du terrain naturel (MNT). Une valeur saisie force la cote du projet.</div>
-  </div>`;
+  const rings = GEOM.ringsOf(d);
+  return rings.map((ring, ri) => {
+    const rows = ring.map((pt, i) => {
+      const l = toL93(pt.lng, pt.lat);
+      const zAuto = getZ(l);
+      const zVal = pt.customZ !== undefined ? pt.customZ.toFixed(2) : '';
+      const zPh = isValidZ(zAuto) ? zAuto.toFixed(2) : 'hors MNT';
+      return `<tr>
+        <td class="idx">${i + 1}</td>
+        <td><input inputmode="decimal" id="ed-x-${d.id}-${ri}-${i}" value="${l[0].toFixed(2)}" onchange="applyVertexEdit(${d.id},${ri},${i})"></td>
+        <td><input inputmode="decimal" id="ed-y-${d.id}-${ri}-${i}" value="${l[1].toFixed(2)}" onchange="applyVertexEdit(${d.id},${ri},${i})"></td>
+        <td><input inputmode="decimal" class="zin" id="ed-z-${d.id}-${ri}-${i}" value="${zVal}" placeholder="${zPh}" onchange="applyVertexEdit(${d.id},${ri},${i})"></td>
+        <td><button class="icon-btn" title="Supprimer ce sommet" onclick="removeVertexById(${d.id},${ri},${i})">✕</button></td>
+      </tr>`;
+    }).join('');
+    const head = rings.length > 1
+      ? `<div class="ring-head">Emprise ${ri + 1}${ri === 0 ? ' (principale)' : ''} — ${fmt(GEOM.polyArea(ptsToL93(ring)), 0)} m²
+           ${ri > 0 ? `<button class="icon-btn danger" onclick="removeRing(${d.id},${ri})" title="Retirer cette emprise">✕</button>` : ''}</div>`
+      : '';
+    return `<div class="vtx-wrap">${head}
+      <table class="vtx-tbl"><thead><tr><th>N°</th><th>X (L93)</th><th>Y (L93)</th><th>Z forcé</th><th></th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+  }).join('') + `<div class="hint">Z vide = altitude du terrain naturel (MNT). Une valeur saisie force la cote du projet.</div>`;
 }
-
-function removeVertexById(id, i) { const d = findFeature(id); if (d) removeVertex(d, i); }
 
 /* ---------------- Liste des tracés ---------------- */
 
@@ -386,6 +448,7 @@ function featureCard(d, projId = null) {
       <button class="btn tiny plane" onclick="askVolume(${d.id},'plane')" title="Volume par rapport au plan de facettes passant par le contour">📏 Plan</button>
       <button class="btn tiny smooth" onclick="askVolume(${d.id},'smooth')" title="Volume par rapport à une surface souple raccordant le contour">📐 Courbe</button>
       <button class="btn tiny v3d" onclick="VIEW3D.open(${d.id})">🧊 Vue 3D</button>
+      <button class="btn tiny" style="min-width:100%" onclick="startAddRing(${d.id})">➕ Ajouter une emprise à cette surface</button>
     </div>` : `
     <div class="btn-row">
       <button class="btn tiny" onclick="PROFILE.openById(${d.id})">📈 Profil en long</button>
@@ -537,6 +600,7 @@ function copyProjectToWorkspace(pid) {
     const c = newFeature({
       type: f.type, name: f.name + ' (copie)', color: f.color,
       ptsGPS: f.ptsGPS.map(pt => ({ ...pt })),
+      extraRings: (f.extraRings || []).map(r => r.map(pt => ({ ...pt }))),
       center: f.center ? { ...f.center } : undefined, radius: f.radius
     });
     c.projectPts = (f.projectPts || []).map(x => ({ ...x }));
@@ -546,10 +610,12 @@ function copyProjectToWorkspace(pid) {
   toast(`Projet « ${p.name} » copié dans l’espace de travail.`, 'ok');
 }
 
+window.startAddRing = startAddRing;
 window.startTool = startTool; window.cancelDraw = cancelDraw; window.finalizeDraw = finalizeDraw;
 window.undoLastPoint = undoLastPoint; window.onMapClick = onMapClick;
 window.toggleEditMode = toggleEditMode; window.makeEditable = makeEditable;
 window.applyVertexEdit = applyVertexEdit; window.removeVertexById = removeVertexById;
+window.removeRing = removeRing; window.redrawGeometry = redrawGeometry;
 window.activateAddPoint = activateAddPoint; window.setAllZ = setAllZ;
 window.setCircleRadius = setCircleRadius;
 window.toggleFeature = toggleFeature; window.setFeatureColor = setFeatureColor;

@@ -32,8 +32,9 @@ function initMap() {
   L.control.scale({ imperial: false, position: 'bottomright' }).addTo(map);
 
   map.on('click', e => {
-    if (SNOWPARK.onMapClick(e)) return;
-    onMapClick(e);
+    if (DAMAGE.onMapClick(e)) return;      // placement du garage
+    if (SNOWPARK.onMapClick(e)) return;    // pose d'un module
+    onMapClick(e);                         // outils de tracé
   });
 
   map.on('mousemove', e => updateReadout(e.latlng));
@@ -154,10 +155,19 @@ function setMode(mode) {
   APP.mode = mode;
   document.body.dataset.mode = mode;
   document.querySelectorAll('[data-mode-btn]').forEach(b => b.classList.toggle('active', b.dataset.modeBtn === mode));
-  document.getElementById('panel-terrain').style.display = mode === 'terrain' ? 'block' : 'none';
-  document.getElementById('panel-snowpark').style.display = mode === 'snowpark' ? 'block' : 'none';
+  ['terrain', 'snowpark', 'damage'].forEach(m => {
+    const el = document.getElementById('panel-' + m);
+    if (el) el.style.display = (m === mode) ? 'block' : 'none';
+  });
   cancelDraw(); SNOWPARK.startPlace(null);
+  APP.pickingDepot = false;
+  if (mode !== 'snowpark') SNOWPARK.hideHandles();
   if (mode === 'snowpark') SNOWPARK.renderList();
+  if (mode === 'damage') DAMAGE.renderPanel();
+  const t = { terrain: 'Outils', snowpark: 'Snowpark', damage: 'Damage des pistes' }[mode];
+  const h = document.querySelector('#right-panel .panel-head h2'); if (h) h.textContent = t;
+  if (window.innerWidth < 1000) document.getElementById('right-panel').classList.add('open');
+  setTimeout(() => APP.map.invalidateSize(), 260);
 }
 
 /** Tiroirs latéraux : permanents sur PC, superposés sur mobile. */
@@ -267,6 +277,7 @@ function boot() {
   document.getElementById('geo-file').addEventListener('change', e => { for (const f of e.target.files) EXPORTS.importGeoFile(f); e.target.value = ''; });
   document.getElementById('proj-file').addEventListener('change', e => { if (e.target.files[0]) EXPORTS.loadProjectFile(e.target.files[0]); e.target.value = ''; });
 
+  DAMAGE.init();
   setMode('terrain');
   if (window.innerWidth >= 1000) { document.getElementById('left-panel').classList.add('open'); document.getElementById('right-panel').classList.add('open'); }
 

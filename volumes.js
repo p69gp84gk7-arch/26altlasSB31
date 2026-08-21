@@ -60,13 +60,16 @@ function autoStep(bb) {
  * @returns {object} résultat structuré
  */
 function computeVolume(d, mode, opts = {}) {
-  const l93 = ptsToL93(d.ptsGPS);
-  const poly = (d.type === 'circle' && d.center && d.radius)
-    ? GEOM.circlePolygonL93(toL93(d.center.lng, d.center.lat), d.radius)
-    : l93;
+  // Une surface peut être composée de plusieurs emprises : on intègre sur l'union
+  const rings = GEOM.ringsOf(d);
+  const polys = (d.type === 'circle' && d.center && d.radius)
+    ? [GEOM.circlePolygonL93(toL93(d.center.lng, d.center.lat), d.radius)]
+    : rings.map(ptsToL93);
+  const poly = polys[0];
 
-  const bb = GEOM.bboxOf(poly);
-  const areaExact = GEOM.polyArea(poly);
+  const bb = GEOM.bboxOfRings(polys);
+  const overlapping = polys.length > 1 && GEOM.ringsOverlap(polys);
+  const areaSum = polys.reduce((a, p) => a + GEOM.polyArea(p), 0);
 
   let step = opts.step && opts.step !== 'auto' ? Number(opts.step) : autoStep(bb);
   while ((bb.w / step) * (bb.h / step) > MAX_CELLS) step *= 1.5;
@@ -74,12 +77,17 @@ function computeVolume(d, mode, opts = {}) {
   const sub = Math.max(1, Math.min(6, opts.subSample ?? APP.settings.subSample));
 
   /* --- Surface de référence (le « projet ») --- */
+  // Les points d'appui viennent de TOUTES les emprises : le plan de facettes et
+  // la surface souple englobent ainsi la totalité de la zone terrassée.
   const border = [];
-  poly.forEach((p, i) => {
-    const src = (d.type === 'circle') ? null : d.ptsGPS[i];
-    const z = src ? effectiveZ(src) : getZ(p);
-    if (isValidZ(z)) border.push({ x: p[0], y: p[1], z });
+  polys.forEach((p93, ri) => {
+    const ring = (d.type === 'circle') ? null : rings[ri];
+    p93.forEach((p, i) => {
+      const z = ring ? effectiveZ(ring[i]) : getZ(p);
+      if (isValidZ(z)) border.push({ x: p[0], y: p[1], z });
+    });
   });
+  const clipHull = polys.length === 1 ? poly : null;   // pas de découpe stricte en multi-emprises
 
   let refFn, refLabel;
   if (mode === 'flat') {
@@ -89,7 +97,7 @@ function computeVolume(d, mode, opts = {}) {
     refLabel = `Plateforme à ${fmt(z)} m NGF`;
   } else if (mode === 'plane') {
     if (border.length < 3) return { error: 'Au moins 3 points avec altitude connue sont nécessaires.' };
-    refFn = GEOM.makePlaneSurface(border, poly);
+    refFn = GEOM.makePlaneSurface(border, clipHull);
     refLabel = 'Plan de facettes (TIN sur le contour)';
   } else {
     if (border.length < 3) return { error: 'Au moins 3 points avec altitude connue sont nécessaires.' };
@@ -112,11 +120,11 @@ function computeVolume(d, mode, opts = {}) {
       const cx = x + step / 2, cy = y + step / 2;
 
       // Test rapide : les 4 coins + le centre de la maille
-      const c0 = GEOM.pointInPoly(x, y, poly);
-      const c1 = GEOM.pointInPoly(x + step, y, poly);
-      const c2 = GEOM.pointInPoly(x + step, y + step, poly);
-      const c3 = GEOM.pointInPoly(x, y + step, poly);
-      const center = GEOM.pointInPoly(cx, cy, poly);
+      const c0 = GEOM.pointInRings(x, y, polys);
+      const c1 = GEOM.pointInRings(x + step, y, polys);
+      const c2 = GEOM.pointInRings(x + step, y + step, polys);
+      const c3 = GEOM.pointInRings(x, y + step, polys);
+      const center = GEOM.pointInRings(cx, cy, polys);
       const allIn = c0 && c1 && c2 && c3 && center;
       const allOut = !c0 && !c1 && !c2 && !c3 && !center;
       if (allOut) continue;
@@ -133,7 +141,7 @@ function computeVolume(d, mode, opts = {}) {
           for (let sx = 0; sx < sub; sx++) {
             const px = x + (sx + 0.5) * step / sub;
             const py = y + (sy + 0.5) * step / sub;
-            if (GEOM.pointInPoly(px, py, poly)) accumulate(px, py, subArea);
+            if (GEOM.pointInRings(px, py, polys)) accumulate(px, py, subArea);
           }
         }
       }
@@ -152,7 +160,12 @@ function computeVolume(d, mode, opts = {}) {
   }
 
   /* --- Contrôles de cohérence --- */
+  const areaExact = overlapping ? GEOM.unionArea(polys, Math.min(step / 2, 0.25)) : areaSum;
   const warnings = [];
+  if (polys.length > 1) {
+    warnings.push(`Surface composée de ${polys.length} emprises` +
+      (overlapping ? ` — recouvrement de ${fmtM2(areaSum - areaExact)} déduit du total.` : '.'));
+  }
   const totalArea = areaGrid + areaNoData;
   const ecart = areaExact > 0 ? Math.abs(totalArea - areaExact) / areaExact * 100 : 0;
   if (ecart > 1) {

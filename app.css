@@ -390,3 +390,86 @@ b.ok{color:var(--ok)} b.warn{color:var(--warn)} b.bad{color:var(--err)}
   #topbar,.panel,#mobile-bar,#draw-bar,#readout,.floating{display:none!important}
   #map-wrap{position:static;height:100vh}
 }
+
+/* =====================================================================
+   Surfaces composées, snowpark libre, damage
+   ===================================================================== */
+
+/* --- Emprises multiples --- */
+.ring-head{
+  display:flex;justify-content:space-between;align-items:center;
+  padding:5px 7px;background:#141821;border-bottom:1px solid var(--line);
+  font-size:11px;color:var(--accent);font-weight:700;position:sticky;top:0;z-index:2;
+}
+
+/* --- Poignées de manipulation des modules --- */
+.park-handle div{
+  width:30px;height:30px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+  font-size:15px;font-weight:700;color:#fff;border:2px solid #fff;
+  box-shadow:0 2px 8px rgba(0,0,0,.6);cursor:grab;
+}
+.park-handle.move div{background:#00d1b2;color:#06231f}
+.park-handle.rot div{background:#8e44ad}
+.park-handle div:active{cursor:grabbing}
+.park-total{
+  background:#0d0f14;border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:8px;
+}
+.park-props .field{margin:8px 0}
+.stl-sel{
+  width:auto;min-height:30px;padding:4px 8px;font-size:12px;
+  background:#0d0f14;border:1px solid var(--line);border-radius:7px;color:var(--txt);cursor:pointer;
+}
+
+/* --- Damage : liste des pistes --- */
+.piste-rows{max-height:320px;overflow-y:auto;display:flex;flex-direction:column;gap:4px;margin-top:6px}
+.piste-row{
+  display:flex;align-items:center;gap:6px;background:var(--panel-2);
+  border:1px solid var(--line);border-left:3px solid var(--line);border-radius:7px;padding:5px 8px;
+}
+.piste-row.on{border-left-color:var(--accent);background:#1b2430}
+.piste-name{
+  flex:1;text-align:left;background:none;border:0;cursor:pointer;font-size:12.5px;
+  color:var(--txt);padding:2px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.piste-name:hover{color:var(--accent)}
+.piste-area{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums;white-space:nowrap}
+
+/* --- Damage : résultats --- */
+.dam-summary{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.dam-summary .pr-item{flex:1 1 110px}
+.mach-card{
+  background:#0d0f14;border:1px solid var(--line);border-left:4px solid var(--mc);
+  border-radius:8px;padding:9px 10px;margin-bottom:8px;font-size:12.5px;
+}
+.mach-head{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.mach-head b{color:var(--mc)}
+.mach-head span{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+.mach-sub{font-size:11px;color:var(--dim);margin:3px 0 6px}
+.mach-list{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:4px}
+.mach-list li{font-size:11.5px;color:#c9cfda}
+.mach-list b{color:var(--txt)}
+
+/* --- Damage : carte --- */
+.dam-order div{
+  width:26px;height:26px;border-radius:50%;background:var(--dc);color:#fff;
+  display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;
+  border:2px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.55);
+}
+.dam-depot div{
+  width:30px;height:30px;border-radius:8px;background:#111;border:2px solid var(--accent);
+  display:flex;align-items:center;justify-content:center;font-size:16px;
+  box-shadow:0 2px 8px rgba(0,0,0,.6);
+}
+
+input[type=time]{
+  background:#0d0f14;color:var(--txt);border:1px solid var(--line);
+  border-radius:7px;padding:5px 7px;font:inherit;font-size:12.5px;min-height:32px;
+}
+
+@media (max-width:999px){
+  .modes{display:none}
+  #mobile-bar button{font-size:10px}
+  .piste-rows{max-height:44vh}
+}
+.mach-list .sens{display:block;font-size:10.5px;color:var(--dim);text-transform:uppercase;letter-spacing:.03em}

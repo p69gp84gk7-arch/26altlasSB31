@@ -32,6 +32,7 @@
   <nav class="modes">
     <button data-mode-btn="terrain" onclick="setMode('terrain')" class="active">🏗️ Terrassement</button>
     <button data-mode-btn="snowpark" onclick="setMode('snowpark')">🏂 Snowpark</button>
+    <button data-mode-btn="damage" onclick="setMode('damage')">🚜 Damage</button>
   </nav>
 
   <div class="spacer"></div>
@@ -52,6 +53,8 @@
       <button onclick="EXPORTS.allPointsCSV()">📋 Tous les points (X Y Z)</button>
       <button onclick="EXPORTS.profileCSV()">📈 Profil affiché</button>
       <button onclick="SNOWPARK.exportCSV()">🏂 Modules snowpark</button>
+      <button onclick="DAMAGE.exportCSV()">🚜 Planning de damage</button>
+      <button onclick="DAMAGE.exportGPX()">🛰️ Parcours de damage (GPX)</button>
       <div class="menu-title">Projet</div>
       <button onclick="EXPORTS.saveProject()">💾 Enregistrer le projet (.terra.json)</button>
       <button onclick="document.getElementById('proj-file').click()">📂 Ouvrir un projet</button>
@@ -172,6 +175,22 @@
     </section>
   </div>
 
+  <!-- ---- Mode damage ---- -->
+  <div id="panel-damage" style="display:none">
+    <section class="block">
+      <h3>Pistes à damer</h3>
+      <div id="piste-list" class="list"></div>
+    </section>
+    <section class="block">
+      <h3>Paramètres d'exploitation</h3>
+      <div id="damage-params"></div>
+    </section>
+    <section class="block">
+      <h3>Planning</h3>
+      <div id="damage-results"></div>
+    </section>
+  </div>
+
   <!-- ---- Mode snowpark ---- -->
   <div id="panel-snowpark" style="display:none">
     <section class="block">
@@ -229,7 +248,13 @@
     <span id="hover-3d" class="hover-z"></span>
     <div class="win-btns">
       <button class="icon-btn" id="btn-capture-3d" onclick="VIEW3D.capture()" title="Ajouter au rapport PDF">📸 Capturer (0/4)</button>
-      <button class="icon-btn" onclick="VIEW3D.exportSTL('terrain')" title="Exporter le terrain en STL">📥 STL</button>
+      <select class="stl-sel" onchange="VIEW3D.exportSTL(this.value); this.selectedIndex=0" title="Exporter un maillage STL">
+        <option value="">📥 STL…</option>
+        <option value="terrain">Terrain naturel</option>
+        <option value="modules">Terrain + modules snowpark</option>
+        <option value="plan">Projet — plan (TIN)</option>
+        <option value="courbe">Projet — courbe</option>
+      </select>
       <button class="icon-btn" onclick="VIEW3D.fullscreen()" title="Plein écran">⛶</button>
       <button class="icon-btn danger" onclick="VIEW3D.close()">✕</button>
     </div>
@@ -288,6 +313,26 @@
        trajectoire. L'indicateur clé est l'<b>EFH</b> (hauteur de chute équivalente) : viser ≤ 1 m.
        « Convertir en surface mesurable » transforme l'emprise du module en tracé cubable et exportable.</p>
 
+    <h3>Surfaces composées</h3>
+    <p>Sur la fiche d'une surface, <b>« ➕ Ajouter une emprise »</b> permet de lui rattacher un second
+       polygone (plateforme + talus + aire de retournement…). Les mesures et la cubature portent alors
+       sur l'<b>union</b> des emprises ; un recouvrement éventuel est déduit une seule fois.</p>
+
+    <h3>Snowpark — modules indépendants</h3>
+    <p>Chaque module produit un relief calculé en tout point : posez un <b>tremplin seul</b>, un
+       <b>box</b> et une <b>réception seule</b> les uns derrière les autres et la trajectoire les
+       enchaîne automatiquement — décollage, glisse sur le box, atterrissage.
+       Sur la carte, la poignée <b>✥</b> déplace le module et <b>↻</b> l'oriente.
+       Le box accepte huit profils (plat, arc-en-ciel, montée, descente, plat+descente,
+       montée+plat, montée+plat+descente, kink) avec toutes les cotes réglables.
+       La <b>neige de base</b> est comptée dans le cubage sur toute l'emprise du module.</p>
+
+    <h3>Damage</h3>
+    <p>Cochez les pistes, placez le garage, réglez le nombre de machines, la largeur de travail,
+       les vitesses et le temps de demi-tour. L'outil calcule la <b>surface développée</b> (le long du
+       terrain, pas la projection), génère un parcours en va-et-vient à l'écartement de la lame,
+       répartit les pistes entre les machines et donne l'heure de fin. Export CSV et GPX.</p>
+
     <h3>Raccourcis</h3>
     <p><kbd>L</kbd> ligne · <kbd>S</kbd> surface · <kbd>Entrée</kbd> terminer · <kbd>Échap</kbd> annuler ·
        <kbd>Ctrl</kbd>+<kbd>Z</kbd> reculer d'un point · <kbd>Ctrl</kbd>+<kbd>S</kbd> enregistrer.</p>
@@ -299,6 +344,7 @@
   <button data-panel-btn="left" onclick="togglePanel('left')">🗂️<span>Données</span></button>
   <button onclick="setMode('terrain')" data-mode-btn="terrain">🏗️<span>Terrain</span></button>
   <button onclick="setMode('snowpark')" data-mode-btn="snowpark">🏂<span>Park</span></button>
+  <button onclick="setMode('damage')" data-mode-btn="damage">🚜<span>Damage</span></button>
   <button data-panel-btn="right" onclick="togglePanel('right')">🛠️<span>Outils</span></button>
 </nav>
 
@@ -312,6 +358,7 @@
 <script src="profile.js"></script>
 <script src="view3d.js"></script>
 <script src="snowpark.js"></script>
+<script src="damage.js"></script>
 <script src="exports.js"></script>
 <script src="ui.js"></script>
 <script>window.addEventListener('DOMContentLoaded', boot);</script>

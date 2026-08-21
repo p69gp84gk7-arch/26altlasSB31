@@ -47,10 +47,13 @@ const EXPORTS = (() => {
   function featureToGeoJSON(d, l93 = false) {
     const conv = p => l93 ? toL93(p.lng, p.lat) : [p.lng, p.lat];
     const z = p => { const v = effectiveZ(p); return isValidZ(v) ? +v.toFixed(2) : 0; };
-    const coords = d.ptsGPS.map(p => [...conv(p), z(p)]);
+    const ring2coords = r => r.map(p => [...conv(p), z(p)]);
+    const coords = ring2coords(d.ptsGPS);
+    const rings = GEOM.ringsOf(d);
     let geometry;
     if (d.type === 'point') geometry = { type: 'Point', coordinates: coords[0] };
     else if (d.type === 'line') geometry = { type: 'LineString', coordinates: coords };
+    else if (rings.length > 1) geometry = { type: 'MultiPolygon', coordinates: rings.map(r => { const c = ring2coords(r); return [[...c, c[0]]]; }) };
     else geometry = { type: 'Polygon', coordinates: [[...coords, coords[0]]] };
 
     const s = d.stats || GEOM.measure(d);
@@ -334,6 +337,7 @@ ${body}
     const ser = d => ({
       type: d.type, name: d.name, color: d.color, weight: d.weight,
       ptsGPS: d.ptsGPS.map(p => ({ lat: p.lat, lng: p.lng, ...(p.customZ !== undefined ? { customZ: p.customZ } : {}) })),
+      extraRings: (d.extraRings || []).map(r => r.map(p => ({ lat: p.lat, lng: p.lng, ...(p.customZ !== undefined ? { customZ: p.customZ } : {}) }))),
       center: d.center, radius: d.radius,
       projectPts: d.projectPts || [], profileWidth: d.profileWidth || null,
       volumes: (d.volumes || []).map(v => ({ ...v }))
@@ -345,7 +349,8 @@ ${body}
       mnt: APP.mnt.map(m => m.name),
       draws: APP.draws.map(ser),
       projects: APP.projects.map(p => ({ name: p.name, features: p.features.map(ser) })),
-      parks: (APP.parks || []).map(f => ({ name: f.name, color: f.color, visible: f.visible !== false, props: { ...f.props } }))
+      parks: (APP.parks || []).map(f => ({ name: f.name, color: f.color, visible: f.visible !== false, props: { ...f.props } })),
+      damage: window.DAMAGE ? DAMAGE.serialize() : null
     };
   }
 
@@ -373,7 +378,7 @@ ${body}
     const hydrate = o => {
       const f = newFeature({
         type: o.type, name: o.name, color: o.color || '#3498db', weight: o.weight || 3,
-        ptsGPS: o.ptsGPS, center: o.center, radius: o.radius
+        ptsGPS: o.ptsGPS, extraRings: o.extraRings || [], center: o.center, radius: o.radius
       });
       f.projectPts = o.projectPts || [];
       f.profileWidth = o.profileWidth || null;
@@ -387,6 +392,7 @@ ${body}
       id: uid(), name: p.name, visible: true, features: (p.features || []).map(hydrate)
     }));
     if (data.parks && window.SNOWPARK) SNOWPARK.restore(data.parks);
+    if (data.damage && window.DAMAGE) DAMAGE.restore(data.damage);
 
     if (data.draws && data.draws.length === 0 && (!data.projects || !data.projects.length)) {
       // rien à recadrer

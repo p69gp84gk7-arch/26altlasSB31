@@ -17,20 +17,25 @@ const VIEW3D = (() => {
   let captures = [];
 
   function gridFor(d, maxCells = 90000) {
-    const l93 = ptsToL93(d.ptsGPS);
-    const poly = (d.type === 'circle' && d.center)
-      ? GEOM.circlePolygonL93(toL93(d.center.lng, d.center.lat), d.radius) : l93;
-    const bb = GEOM.bboxOf(poly);
+    const rings = GEOM.ringsOf(d);
+    const polys = (d.type === 'circle' && d.center)
+      ? [GEOM.circlePolygonL93(toL93(d.center.lng, d.center.lat), d.radius)]
+      : rings.map(ptsToL93);
+    const poly = polys[0];
+    const bb = GEOM.bboxOfRings(polys);
     let step = Math.sqrt((bb.w * bb.h) / maxCells);
     step = Math.max(0.25, step);
 
     const border = [];
-    poly.forEach((p, i) => {
-      const z = (d.type === 'circle') ? getZ(p) : effectiveZ(d.ptsGPS[i]);
-      if (isValidZ(z)) border.push({ x: p[0], y: p[1], z });
+    polys.forEach((p93, ri) => {
+      const ring = (d.type === 'circle') ? null : rings[ri];
+      p93.forEach((p, i) => {
+        const z = ring ? effectiveZ(ring[i]) : getZ(p);
+        if (isValidZ(z)) border.push({ x: p[0], y: p[1], z });
+      });
     });
 
-    const planeFn = border.length >= 3 ? GEOM.makePlaneSurface(border, poly) : null;
+    const planeFn = border.length >= 3 ? GEOM.makePlaneSurface(border, polys.length === 1 ? poly : null) : null;
     const smoothFn = border.length >= 3 ? GEOM.makeSmoothSurface(border, 2) : null;
 
     const x0 = bb.minX - step, x1 = bb.maxX + step;
@@ -40,22 +45,40 @@ const VIEW3D = (() => {
     for (let x = x0; x <= x1; x += step) xs.push(x);
     for (let y = y0; y <= y1; y += step) ys.push(y);
 
-    const zT = [], zP = [], zC = [], dP = [];
+    // Modules snowpark présents dans l'emprise : ils sont rendus « posés »
+    // sur le terrain, dans la même scène que le projet de terrassement.
+    const parks = (window.SNOWPARK && APP.parks.length) ? SNOWPARK.modulesInBox(bb) : [];
+    const hasParks = parks.length > 0;
+
+    const zT = [], zP = [], zC = [], dP = [], zM = [];
     for (const y of ys) {
-      const rT = [], rP = [], rC = [], rD = [];
+      const rT = [], rP = [], rC = [], rD = [], rM = [];
       for (const x of xs) {
-        if (!GEOM.pointInPoly(x, y, poly)) { rT.push(null); rP.push(null); rC.push(null); rD.push(null); continue; }
+        if (!GEOM.pointInRings(x, y, polys)) { rT.push(null); rP.push(null); rC.push(null); rD.push(null); rM.push(null); continue; }
         const t = getZ([x, y]);
-        rT.push(isValidZ(t) ? t : null);
+        const tv = isValidZ(t) ? t : null;
+        rT.push(tv);
         const p = planeFn ? planeFn(x, y) : null;
         const c = smoothFn ? smoothFn(x, y) : null;
         rP.push(isValidZ(p) ? p : null);
         rC.push(isValidZ(c) ? c : null);
         rD.push(isValidZ(t) && isValidZ(p) ? t - p : null);   // > 0 : déblai
+
+        if (hasParks && tv !== null) {
+          let zm = tv, touched = false;
+          for (const f of parks) {
+            const r = SNOWPARK.zAt(f, x, y);
+            if (!r) continue;
+            const base = (f.props.baseSnow || 0) / 100;
+            const z = r.w * r.z + (1 - r.w) * (tv + base * r.w);
+            if (z > zm) { zm = z; touched = true; }
+          }
+          rM.push(touched ? zm : null);
+        } else rM.push(null);
       }
-      zT.push(rT); zP.push(rP); zC.push(rC); dP.push(rD);
+      zT.push(rT); zP.push(rP); zC.push(rC); dP.push(rD); zM.push(rM);
     }
-    return { xs, ys, zT, zP, zC, dP, bb, step, border, poly };
+    return { xs, ys, zT, zP, zC, dP, zM, hasParks, bb, step, border, poly, polys };
   }
 
   function open(id) {
@@ -88,6 +111,11 @@ const VIEW3D = (() => {
           visible: false, hovertemplate: 'Δ %{surfacecolor:.2f} m<extra></extra>'
         },
         {
+          z: g.zM, x: X, y: Y, type: 'surface', name: 'Modules snowpark',
+          colorscale: [[0, '#6d3f9c'], [1, '#d7b3ff']], showscale: false,
+          visible: g.hasParks, hovertemplate: 'Module — Z %{z:.2f} m<extra></extra>'
+        },
+        {
           x: [...g.border.map(p => p.x - g.bb.minX), g.border[0] ? g.border[0].x - g.bb.minX : 0],
           y: [...g.border.map(p => p.y - g.bb.minY), g.border[0] ? g.border[0].y - g.bb.minY : 0],
           z: [...g.border.map(p => p.z), g.border[0] ? g.border[0].z : 0],
@@ -112,7 +140,8 @@ const VIEW3D = (() => {
           <label><input type="checkbox" onchange="VIEW3D.setTrace(1,this.checked)"> Projet — plan (TIN)</label>
           <label><input type="checkbox" onchange="VIEW3D.setTrace(2,this.checked)"> Projet — courbe</label>
           <label><input type="checkbox" onchange="VIEW3D.setTrace(3,this.checked)"> Carte des écarts</label>
-          <label><input type="checkbox" checked onchange="VIEW3D.setTrace(4,this.checked)"> Contour</label>`;
+          <label><input type="checkbox" ${g.hasParks ? 'checked' : ''} ${g.hasParks ? '' : 'disabled'} onchange="VIEW3D.setTrace(4,this.checked)"> 🏂 Modules snowpark${g.hasParks ? '' : ' (aucun ici)'}</label>
+          <label><input type="checkbox" checked onchange="VIEW3D.setTrace(5,this.checked)"> Contour</label>`;
         const plot = document.getElementById('plot-3d');
         plot.on('plotly_hover', ev => {
           const p = ev.points && ev.points[0]; if (!p) return;
@@ -196,7 +225,14 @@ const VIEW3D = (() => {
   function exportSTL(which = 'terrain') {
     if (!lastGrid) { toast('Ouvrez d’abord une vue 3D.', 'warn'); return; }
     const g = lastGrid;
-    const Z = which === 'plan' ? g.zP : which === 'courbe' ? g.zC : g.zT;
+    let Z = which === 'plan' ? g.zP : which === 'courbe' ? g.zC : g.zT;
+    if (which === 'modules') {
+      // Terrain naturel recouvert par les modules : le solide réellement construit
+      Z = g.zT.map((row, j) => row.map((v, i) => {
+        const m = g.zM[j][i];
+        return v === null ? null : (m !== null && m > v ? m : v);
+      }));
+    }
     const tris = [];
     for (let j = 0; j < g.ys.length - 1; j++) {
       for (let i = 0; i < g.xs.length - 1; i++) {

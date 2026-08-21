@@ -86,6 +86,7 @@ function measure(d) {
   const res = {
     type: d.type,
     nPts: pts.length,
+    nParts: 1,
     length2D: 0, length3D: 0, perimeter2D: 0,
     areaH: 0, areaDev: 0,
     zMin: known.length ? Math.min(...known) : null,
@@ -101,36 +102,58 @@ function measure(d) {
 
   const closed = (d.type === 'area' || d.type === 'circle');
 
-  // Longueurs 2D / 3D + dénivelés cumulés + pente maxi de segment
-  const nSeg = closed ? l93.length : l93.length - 1;
-  for (let i = 0; i < nSeg; i++) {
-    const j = (i + 1) % l93.length;
+  if (closed) {
+    // Surface éventuellement composée de plusieurs emprises
+    const rings = ringsOf(d);
+    res.nParts = rings.length;
+    const polys = [];
+    let allZ = [];
+    for (const ring of rings) {
+      const p93 = ptsToL93(ring);
+      const rz = ring.map(effectiveZ);
+      polys.push(p93);
+      allZ = allZ.concat(rz.filter(isValidZ));
+      res.perimeter2D += polyPerimeter(p93, true);
+      res.areaH += polyArea(p93);
+      res.areaDev += developedArea(p93, rz);
+      res.nPts += (ring === pts ? 0 : ring.length);
+    }
+    if (allZ.length) { res.zMin = Math.min(...allZ); res.zMax = Math.max(...allZ); }
+    res.length2D = res.perimeter2D;
+
+    // Emprises sécantes : l'addition des aires compterait deux fois le recouvrement
+    if (polys.length > 1 && ringsOverlap(polys)) {
+      const u = unionArea(polys);
+      res.overlap = res.areaH - u;
+      if (res.overlap > 0.005 * res.areaH) {
+        res.areaDev *= u / res.areaH;
+        res.areaH = u;
+        res.hasOverlap = true;
+      }
+    }
+    return res;
+  }
+
+  // Tracés ouverts (lignes)
+  for (let i = 0; i < l93.length - 1; i++) {
+    const j = i + 1;
     const dl = Math.hypot(l93[j][0] - l93[i][0], l93[j][1] - l93[i][1]);
-    if (!closed) res.length2D += dl;
+    res.length2D += dl;
     res.perimeter2D += dl;
 
     if (isValidZ(zs[i]) && isValidZ(zs[j])) {
       const dz = zs[j] - zs[i];
-      if (!closed) {
-        res.length3D += Math.hypot(dl, dz);
-        if (dz > 0) res.climb += dz; else res.drop += -dz;
-        const s = dl > 0 ? Math.abs(dz / dl) * 100 : 0;
-        if (res.slopeMax === null || s > res.slopeMax) res.slopeMax = s;
-      }
-    } else if (!closed) {
+      res.length3D += Math.hypot(dl, dz);
+      if (dz > 0) res.climb += dz; else res.drop += -dz;
+      const sl = dl > 0 ? Math.abs(dz / dl) * 100 : 0;
+      if (res.slopeMax === null || sl > res.slopeMax) res.slopeMax = sl;
+    } else {
       res.length3D += dl;
     }
   }
-
-  if (closed) {
-    res.areaH = polyArea(l93);
-    res.areaDev = developedArea(l93, zs);
-    res.length2D = res.perimeter2D;
-  } else {
-    if (res.zStart !== null && res.zEnd !== null) {
-      res.deltaZ = res.zEnd - res.zStart;
-      res.slopeMean = res.length2D > 0 ? (res.deltaZ / res.length2D) * 100 : null;
-    }
+  if (res.zStart !== null && res.zEnd !== null) {
+    res.deltaZ = res.zEnd - res.zStart;
+    res.slopeMean = res.length2D > 0 ? (res.deltaZ / res.length2D) * 100 : null;
   }
   return res;
 }
@@ -351,8 +374,155 @@ function makeSmoothSurface(borderPts, power = 2) {
 /** Surface plane horizontale à cote constante. */
 function makeFlatSurface(z) { return () => z; }
 
+
+/* ---------------- Emprises multiples (surfaces composées) ---------------- */
+
+/**
+ * Une surface peut être composée de plusieurs emprises (« parties ») :
+ * on trace une plateforme, puis on lui ajoute un talus, une aire de retournement…
+ * et la cubature porte sur l'UNION des emprises.
+ * `ptsGPS` reste la partie principale ; `extraRings` contient les suivantes.
+ */
+function ringsOf(d) {
+  const r = [d.ptsGPS];
+  if (d.extraRings && d.extraRings.length) for (const e of d.extraRings) if (e && e.length >= 3) r.push(e);
+  return r;
+}
+
+/** Toutes les parties converties en Lambert-93. */
+function ringsL93(d) { return ringsOf(d).map(ptsToL93); }
+
+/** Le point est-il dans l'union des emprises ? */
+function pointInRings(x, y, polys) {
+  for (const p of polys) if (pointInPoly(x, y, p)) return true;
+  return false;
+}
+
+function bboxOfRings(polys) {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const p of polys) {
+    const b = bboxOf(p);
+    minX = Math.min(minX, b.minX); minY = Math.min(minY, b.minY);
+    maxX = Math.max(maxX, b.maxX); maxY = Math.max(maxY, b.maxY);
+  }
+  return { minX, minY, maxX, maxY, w: maxX - minX, h: maxY - minY };
+}
+
+/**
+ * Aire de l'union d'un ensemble de polygones, par balayage régulier.
+ * Employée seulement quand les emprises se chevauchent : sans recouvrement,
+ * la somme des aires exactes est utilisée (plus précise).
+ */
+function unionArea(polys, step) {
+  if (polys.length === 1) return polyArea(polys[0]);
+  const bb = bboxOfRings(polys);
+  const st = step || Math.max(0.05, Math.sqrt(bb.w * bb.h / 200000));
+  let a = 0;
+  for (let y = bb.minY + st / 2; y <= bb.maxY; y += st)
+    for (let x = bb.minX + st / 2; x <= bb.maxX; x += st)
+      if (pointInRings(x, y, polys)) a += st * st;
+  return a;
+}
+
+/** Les emprises se recouvrent-elles (test rapide par boîtes puis par sommets) ? */
+function ringsOverlap(polys) {
+  for (let i = 0; i < polys.length; i++) {
+    for (let j = i + 1; j < polys.length; j++) {
+      const a = bboxOf(polys[i]), b = bboxOf(polys[j]);
+      if (a.maxX < b.minX || b.maxX < a.minX || a.maxY < b.minY || b.maxY < a.minY) continue;
+      if (polys[j].some(p => pointInPoly(p[0], p[1], polys[i]))) return true;
+      if (polys[i].some(p => pointInPoly(p[0], p[1], polys[j]))) return true;
+      return true;   // boîtes sécantes : on reste prudent
+    }
+  }
+  return false;
+}
+
+/* ---------------- Outils pour le damage ---------------- */
+
+/**
+ * Axe principal d'un polygone (analyse en composantes principales sur les
+ * sommets pondérés par la longueur des côtés).
+ * @returns {{cx:number, cy:number, angle:number, long:number, larg:number}}
+ *          angle en radians, `long`/`larg` = étendue selon l'axe et sa normale.
+ */
+function principalAxis(poly) {
+  let sw = 0, cx = 0, cy = 0;
+  const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const w = Math.hypot(poly[j][0] - poly[i][0], poly[j][1] - poly[i][1]);
+    cx += (poly[i][0] + poly[j][0]) / 2 * w;
+    cy += (poly[i][1] + poly[j][1]) / 2 * w;
+    sw += w;
+  }
+  if (sw === 0) return { cx: poly[0][0], cy: poly[0][1], angle: 0, long: 0, larg: 0 };
+  cx /= sw; cy /= sw;
+
+  let sxx = 0, syy = 0, sxy = 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const w = Math.hypot(poly[j][0] - poly[i][0], poly[j][1] - poly[i][1]);
+    const mx = (poly[i][0] + poly[j][0]) / 2 - cx;
+    const my = (poly[i][1] + poly[j][1]) / 2 - cy;
+    sxx += mx * mx * w; syy += my * my * w; sxy += mx * my * w;
+  }
+  const angle = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+
+  // Étendues selon l'axe et sa normale
+  const ca = Math.cos(angle), sa = Math.sin(angle);
+  let uMin = Infinity, uMax = -Infinity, vMin = Infinity, vMax = -Infinity;
+  for (const p of poly) {
+    const dx = p[0] - cx, dy = p[1] - cy;
+    const u = dx * ca + dy * sa, v = -dx * sa + dy * ca;
+    uMin = Math.min(uMin, u); uMax = Math.max(uMax, u);
+    vMin = Math.min(vMin, v); vMax = Math.max(vMax, v);
+  }
+  return { cx, cy, angle, long: uMax - uMin, larg: vMax - vMin, uMin, uMax, vMin, vMax };
+}
+
+/**
+ * Intervalles d'une droite infinie situés à l'intérieur d'un polygone.
+ * La droite est paramétrée par un point d'origine et une direction unitaire.
+ * @returns {Array<[number,number]>} couples d'abscisses curvilignes (règle pair-impair)
+ */
+function clipLineToPoly(ox, oy, dx, dy, poly) {
+  const ts = [];
+  const n = poly.length;
+  for (let i = 0; i < n; i++) {
+    const a = poly[i], b = poly[(i + 1) % n];
+    const ex = b[0] - a[0], ey = b[1] - a[1];
+    const den = dx * ey - dy * ex;
+    if (Math.abs(den) < 1e-12) continue;              // parallèle
+    const t = ((a[0] - ox) * ey - (a[1] - oy) * ex) / den;   // sur la droite
+    const u = ((a[0] - ox) * dy - (a[1] - oy) * dx) / den;   // sur le côté
+    if (u >= 0 && u < 1) ts.push(t);                  // borne haute exclue : pas de doublon aux sommets
+  }
+  ts.sort((p, q) => p - q);
+  const out = [];
+  for (let i = 0; i + 1 < ts.length; i += 2) if (ts[i + 1] - ts[i] > 1e-6) out.push([ts[i], ts[i + 1]]);
+  return out;
+}
+
+/** Intervalles intérieurs à l'union de plusieurs polygones, fusionnés. */
+function clipLineToRings(ox, oy, dx, dy, polys) {
+  let segs = [];
+  for (const p of polys) segs = segs.concat(clipLineToPoly(ox, oy, dx, dy, p));
+  segs.sort((a, b) => a[0] - b[0]);
+  const merged = [];
+  for (const s of segs) {
+    const last = merged[merged.length - 1];
+    if (last && s[0] <= last[1] + 1e-6) last[1] = Math.max(last[1], s[1]);
+    else merged.push([s[0], s[1]]);
+  }
+  return merged;
+}
+
 window.GEOM = {
   pointInPoly, signedArea, polyArea, polyPerimeter, bboxOf, circlePolygonL93,
   measure, developedArea, delaunay, makePlaneSurface, makeSmoothSurface,
-  makeFlatSurface, leastSquaresPlane
+  makeFlatSurface, leastSquaresPlane, triArea3D,
+  ringsOf, ringsL93, pointInRings, bboxOfRings, unionArea, ringsOverlap,
+  principalAxis, clipLineToPoly, clipLineToRings
 };
+window.ringsOf = ringsOf;

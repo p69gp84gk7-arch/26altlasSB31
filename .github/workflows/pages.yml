@@ -1,0 +1,33 @@
+name: Publication du site (GitHub Pages)
+
+# Publie le dossier web/ à chaque fusion dans main.
+# Le code serveur (backend/api.js) n'a rien à publier : Apps Script le relit
+# directement sur GitHub (branche main) toutes les 5 minutes.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: web
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,10 +1,16 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <base target="_top">
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>Dépannages – Fichier clients</title>
+  <meta name="theme-color" content="#1f3864">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Dépannages">
+  <meta name="robots" content="noindex">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
   <style>
     :root {
       --bg: #f4f6f9;
@@ -122,6 +128,7 @@
     <div class="wrap">
       <h1>Dépannages électroménager</h1>
       <a id="lnkSheet" href="#" target="_blank" class="hidden">Feuille</a>
+      <a id="lnkSetup" href="#" title="Connexion">⚙︎</a>
       <button class="btn light" id="btnNew">+ Nouvelle</button>
     </div>
     <div class="wrap tabs">
@@ -129,6 +136,24 @@
       <button class="tab" data-tab="factures">Factures pièces</button>
     </div>
   </header>
+
+  <!-- ============ CONNEXION ============ -->
+  <div class="wrap hidden" id="viewSetup">
+    <div class="card">
+      <h2>Connexion à votre fichier clients</h2>
+      <p class="hint" id="setupMsg">Ouvrez le <b>lien de connexion</b> depuis la feuille Google Sheets
+        (menu <b>Dépannages › Lien de connexion</b>), ou collez-le ci-dessous.
+        À faire une seule fois par appareil.</p>
+      <div class="field full"><label for="setupLink">Lien de connexion</label>
+        <textarea id="setupLink" placeholder="https://…github.io/…#connexion=…"></textarea></div>
+      <div class="actions">
+        <button type="button" class="btn" id="btnSetup">Se connecter</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost hidden" id="btnSetupCancel">Annuler</button>
+        <button type="button" class="btn danger hidden" id="btnLogout">Déconnecter cet appareil</button>
+      </div>
+    </div>
+  </div>
 
   <!-- ============ LISTE ============ -->
   <div class="wrap" id="viewList">
@@ -300,7 +325,7 @@
     fReturn: 'factures',// vue à afficher après la fiche facture
     fFile: null         // fichier choisi {name, dataUrl}
   };
-  var VIEWS = ['viewList', 'viewForm', 'viewFactures', 'viewFacture'];
+  var VIEWS = ['viewSetup', 'viewList', 'viewForm', 'viewFactures', 'viewFacture'];
   function show(view) {
     VIEWS.forEach(function (v) { $(v).classList.toggle('hidden', v !== view); });
     var tab = (view === 'viewFactures' || (view === 'viewFacture' && state.fReturn === 'factures')) ? 'factures' : 'list';
@@ -312,13 +337,79 @@
 
   var $ = function (id) { return document.getElementById(id); };
 
+  // ------------------------------------------------------------------
+  // Connexion à l'API (Google Apps Script) : adresse + clé gardées sur l'appareil
+  // ------------------------------------------------------------------
+  var CFG_KEY = 'depannages.connexion';
+  function getCfg() {
+    try { return JSON.parse(localStorage.getItem(CFG_KEY) || 'null'); } catch (e) { return null; }
+  }
+  function setCfg(cfg) {
+    try {
+      if (cfg) localStorage.setItem(CFG_KEY, JSON.stringify(cfg)); else localStorage.removeItem(CFG_KEY);
+    } catch (e) { /* stockage indisponible (navigation privée) */ }
+  }
+  /** Lit « …#connexion=<url>&cle=<clé> » (lien complet ou seulement la partie après #). */
+  function parseLink(text) {
+    var t = String(text || '').trim();
+    var i = t.indexOf('#');
+    var params = new URLSearchParams(i >= 0 ? t.slice(i + 1) : t);
+    var url = params.get('connexion'), key = params.get('cle');
+    if (!url || !key || !/^https:\/\/script\.google\.com\//.test(url)) return null;
+    return { url: url, key: key };
+  }
+
+  function AuthError(msg) { var e = new Error(msg); e.auth = true; return e; }
+
   // Appel serveur sous forme de promesse
   function call(fn) {
     var args = Array.prototype.slice.call(arguments, 1);
-    return new Promise(function (resolve, reject) {
-      var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
-      r[fn].apply(r, args);
+    var cfg = getCfg();
+    if (!cfg) return Promise.reject(AuthError('Appareil non connecté.'));
+    return fetch(cfg.url, {
+      method: 'POST',
+      // text/plain : évite la requête préalable CORS, refusée par Apps Script
+      body: JSON.stringify({ key: cfg.key, action: fn, args: args })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('Serveur indisponible (HTTP ' + r.status + ').');
+      return r.json();
+    }, function () {
+      throw new Error('Pas de connexion au serveur. Vérifiez le réseau.');
+    }).then(function (res) {
+      if (res.ok) return res.data;
+      if (res.code === 'AUTH') { showSetup(res.error); throw AuthError(res.error); }
+      throw new Error(res.error || 'Erreur inconnue.');
     });
+  }
+
+  function showSetup(msg) {
+    var cfg = getCfg();
+    $('setupMsg').innerHTML = msg ? esc(msg)
+      : 'Ouvrez le <b>lien de connexion</b> depuis la feuille Google Sheets (menu <b>Dépannages › Lien de connexion</b>), ou collez-le ci-dessous. À faire une seule fois par appareil.';
+    $('btnLogout').classList.toggle('hidden', !cfg);
+    $('btnSetupCancel').classList.toggle('hidden', !cfg || !!msg);
+    $('setupLink').value = '';
+    show('viewSetup');
+  }
+
+  function connect(cfg) {
+    setCfg(cfg);
+    $('btnSetup').disabled = true;
+    return call('getLinks').then(function (l) {
+      applyLinks(l);
+      toast('Appareil connecté');
+      showList();
+      return loadList().then(loadFactures);
+    }).catch(function (e) {
+      if (!e.auth) showSetup('Connexion impossible : ' + errMsg(e));
+    }).finally(function () { $('btnSetup').disabled = false; });
+  }
+
+  function applyLinks(l) {
+    $('lnkSheet').href = l.sheetUrl;
+    $('lnkSheet').classList.remove('hidden');
+    $('lnkFactures').href = l.facturesUrl;
+    $('lnkFactures').classList.remove('hidden');
   }
 
   function toast(msg, isErr) {
@@ -897,14 +988,38 @@
   $('fList').addEventListener('click', onFactureClick);
   $('formFactures').addEventListener('click', onFactureClick);
 
+  // Connexion
+  $('lnkSetup').addEventListener('click', function (e) { e.preventDefault(); showSetup(); });
+  $('btnSetup').addEventListener('click', function () {
+    var cfg = parseLink($('setupLink').value);
+    if (!cfg) { toast('Lien de connexion non reconnu.', true); return; }
+    connect(cfg);
+  });
+  $('btnSetupCancel').addEventListener('click', showList);
+  $('btnLogout').addEventListener('click', function () {
+    if (!confirm('Déconnecter cet appareil ? Il faudra rouvrir le lien de connexion.')) return;
+    setCfg(null);
+    showSetup();
+  });
+
+  /** Lien de connexion ouvert : on le mémorise puis on retire la clé de la barre d'adresse. */
+  function connectFromHash() {
+    var fromLink = parseLink(location.hash);
+    if (location.hash) history.replaceState(null, '', location.pathname + location.search);
+    if (fromLink) connect(fromLink);
+    return !!fromLink;
+  }
+  // Application déjà ouverte dans l'onglet : seule la partie « #… » change, sans rechargement.
+  window.addEventListener('hashchange', connectFromHash);
+
   // Démarrage
-  loadList().then(loadFactures);
-  call('getLinks').then(function (l) {
-    $('lnkSheet').href = l.sheetUrl;
-    $('lnkSheet').classList.remove('hidden');
-    $('lnkFactures').href = l.facturesUrl;
-    $('lnkFactures').classList.remove('hidden');
-  }).catch(function () {});
+  (function start() {
+    if (connectFromHash()) return;
+    if (!getCfg()) { showSetup(); return; }
+    show('viewList');
+    loadList().then(loadFactures);
+    call('getLinks').then(applyLinks).catch(function () {});
+  })();
 </script>
 </body>
 </html>

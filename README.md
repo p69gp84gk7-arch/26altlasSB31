@@ -1,116 +1,111 @@
 # Fichier clients – Dépannages électroménager
 
-Petite application web pour suivre mes dépannages d'électroménager :
+Application pour suivre mes dépannages d'électroménager, utilisable sur téléphone et sur ordinateur :
 
-- les fiches clients / interventions sont stockées dans une **feuille Google Sheets** ;
-- les **photos** sont rangées dans **Google Drive** (un dossier par intervention) et s'affichent directement dans l'application ;
-- les **factures des pièces commandées** (PDF ou photo) sont archivées dans Google Drive, rangées par année, et liées à l'intervention concernée ;
-- utilisable sur téléphone (prise de photo directe) comme sur ordinateur.
+- **fiches clients / interventions** enregistrées dans une feuille **Google Sheets** ;
+- **photos** rangées dans **Google Drive** (un dossier par intervention) et affichées dans l'application ;
+- **factures des pièces commandées** (PDF ou photo) archivées dans Google Drive, rangées par année.
 
-L'application est un projet **Google Apps Script** : elle tourne sur votre compte Google, sans serveur ni abonnement.
+**Adresse de l'application : https://p69gp84gk7-arch.github.io/26altlasSB31/**
 
-## Ce qui est enregistré pour chaque intervention
+## Comment ça marche
 
-| Colonne | Contenu |
-|---|---|
-| ID | Numéro automatique (`INT-0001`, `INT-0002`…) |
-| Nom, Prénom | Client |
-| Téléphone, Adresse | Coordonnées (facultatif) |
-| Appareil | Ex. « lave-linge Bosch » (facultatif) |
-| Panne / travaux | Description (facultatif) |
-| Date de l'appel | Jour où le client a appelé |
-| Date d'intervention | Jour du dépannage |
-| Pièce utilisée | Pièce remplacée |
-| Montant pièce (€) | Prix de la pièce |
-| Montant réglé (€) | Somme payée par le client |
-| Terminé | Case à cocher : intervention terminée ou en cours |
-| Dossier photos | Lien vers le dossier Drive de l'intervention |
-| Créé le / Modifié le | Dates automatiques |
-| Marge (€) | Calculée par la feuille : montant réglé − montant pièce |
-
-## Factures des pièces commandées
-
-Onglet **Factures** de la feuille, une ligne par facture archivée :
-
-| Colonne | Contenu |
-|---|---|
-| ID | Numéro automatique (`FAC-0001`…) |
-| Date facture | Obligatoire, sert au rangement par année |
-| Fournisseur, N° facture | Facultatifs, repris dans le nom du fichier |
-| Pièce | Pièce(s) commandée(s) |
-| Montant (€) | Montant de la facture |
-| Intervention | ID de l'intervention liée, vide pour une pièce achetée pour le stock |
-| Client | Nom du client de l'intervention liée |
-| Fichier | Lien vers le fichier dans Drive |
-| Ajoutée le | Date automatique |
-
-Le fichier est rangé dans `Factures pièces/<année>/` et renommé `date_fournisseur_numéro_ID` (ex. `2026-11-12_Pieces-Express_FA-1234_FAC-0007.pdf`) pour être retrouvé facilement dans Drive, même sans l'application. Si la date ou le numéro sont corrigés, le fichier est renommé et déplacé dans la bonne année.
-
-L'onglet **Récapitulatif** totalise le nombre d'interventions (terminées / en cours), le total des pièces, le total réglé, la marge et le total des factures archivées.
-
-## Éléments déjà créés dans Google Drive
-
-Dossier **Dépannages électroménager** :
-
-- `Fichier clients dépannages` (Google Sheets) – onglets *Interventions* et *Récapitulatif* ;
-- `Photos interventions` – un sous-dossier `INT-0001 - Nom Prénom` est créé automatiquement au premier ajout de photo ;
-- `Factures pièces` – un sous-dossier par année (`2026`, `2027`…) est créé automatiquement.
-
-Les identifiants de ces éléments sont déjà renseignés en haut de `apps-script/Code.gs` (`CONFIG`).
-
-## Installation (une seule fois, environ 5 minutes)
-
-1. Ouvrir la feuille **Fichier clients dépannages** dans Google Sheets.
-2. Menu **Extensions › Apps Script**. Un éditeur s'ouvre avec un fichier `Code.gs`.
-3. Remplacer tout le contenu de `Code.gs` par celui du fichier [`apps-script/Code.gs`](apps-script/Code.gs).
-4. Cliquer sur **+** (à côté de « Fichiers ») › **HTML**, nommer le fichier `Index` (sans `.html`), et y coller le contenu de [`apps-script/Index.html`](apps-script/Index.html).
-5. Dans **Paramètres du projet** (roue dentée) : fuseau horaire **(GMT+01:00) Paris**.
-   *(Facultatif : cocher « Afficher le fichier manifeste appsscript.json » et y coller [`apps-script/appsscript.json`](apps-script/appsscript.json).)*
-6. Cliquer sur **Enregistrer** (icône disquette).
-7. **Déployer › Nouveau déploiement** › type **Application Web** :
-   - *Exécuter en tant que* : **Moi** ;
-   - *Qui a accès* : **Moi uniquement** ;
-   - cliquer **Déployer**, puis **Autoriser l'accès** et choisir votre compte Google.
-     Google affiche « Google n'a pas validé cette application » : cliquer **Paramètres avancés › Accéder à … (non sécurisé)**. C'est normal : c'est votre propre script.
-8. Copier l'**URL de l'application Web** (elle se termine par `/exec`) et l'ouvrir.
-
-Sur téléphone : ouvrir l'URL dans le navigateur (connecté à votre compte Google), puis **Partager › Sur l'écran d'accueil** (iPhone) ou **⋮ › Ajouter à l'écran d'accueil** (Android) pour l'avoir comme une appli.
-
-Une fois le script installé, la feuille affiche aussi un menu **Dépannages › Ouvrir l'application** qui donne le lien.
-
-## Utilisation
-
-- **+ Nouvelle** : créer une fiche (la date de l'appel est pré-remplie avec la date du jour).
-- Toucher une fiche dans la liste pour la modifier ; cocher **Intervention terminée** quand c'est fini.
-- **+ Ajouter des photos** : prendre une photo ou en choisir dans la galerie. Les photos sont réduites (1600 px) avant l'envoi pour aller vite en 4G, puis enregistrées dans le dossier Drive de l'intervention.
-- Toucher une photo pour l'agrandir, passer à la suivante, l'ouvrir dans Drive ou la supprimer (corbeille Drive, récupérable 30 jours).
-- Recherche par nom, prénom, téléphone, appareil ou pièce ; filtres *En cours* / *Terminées*.
-- Supprimer une fiche retire la ligne de la feuille mais **garde les photos et les factures** dans Drive.
-- **Factures** : dans une fiche d'intervention, **+ Ajouter une facture** pré-remplit la pièce, le montant et l'intervention ; il reste à choisir le PDF (ou prendre la facture en photo). L'onglet **Factures pièces** liste toutes les factures, avec filtre par année, recherche et total ; **+ Facture** permet d'archiver une pièce achetée pour le stock. Les photos de factures sont réduites à 2000 px (lisibles), les PDF sont envoyés tels quels (20 Mo maximum).
-- Supprimer une facture retire la ligne et met le fichier à la corbeille Drive (récupérable 30 jours).
-
-On peut aussi saisir ou corriger directement dans la feuille Google Sheets : l'application relit la feuille à chaque ouverture. Il faut simplement garder l'ordre des colonnes et un ID dans la colonne A.
-
-## Mettre à jour l'application
-
-Le code évolue par **pull requests** sur GitHub. Une fois une pull request fusionnée dans `main`, recopier `Code.gs` et `Index.html` dans l'éditeur Apps Script (ou `clasp push`), puis publier une nouvelle version.
-
-Après avoir modifié le code dans l'éditeur Apps Script : **Déployer › Gérer les déploiements › ✏️ Modifier › Version : Nouvelle version › Déployer**. L'URL reste la même.
-
-## Option : déployer avec `clasp` (ligne de commande)
-
-```bash
-npm install -g @google/clasp
-clasp login
-clasp clone <ID_DU_SCRIPT> --rootDir apps-script   # ID visible dans Paramètres du projet
-clasp push
 ```
+Téléphone / ordinateur
+  └─ site GitHub Pages (dossier web/)          ← publié automatiquement à chaque fusion dans main
+       │  demandes protégées par une clé secrète
+       ▼
+Google Apps Script : petit « chargeur » (apps-script/Code.gs)   ← collé UNE SEULE FOIS
+       │  télécharge et exécute backend/api.js depuis GitHub (branche main, toutes les 5 min)
+       ▼
+Google Sheets « Fichier clients dépannages »  +  Google Drive (photos, factures)
+```
+
+Toutes les modifications passent par des **pull requests GitHub**. Une fois une pull request fusionnée dans `main` :
+
+- l'interface (`web/`) est republiée automatiquement sur GitHub Pages (1 à 2 minutes) ;
+- le code serveur (`backend/api.js`) est relu automatiquement par Google (5 minutes au plus).
+
+Plus rien à coller dans Google Apps Script.
+
+## Installation (une seule fois)
+
+### 1. Activer GitHub Pages
+
+Sur GitHub, dans le dépôt : **Settings › Pages › Build and deployment › Source : GitHub Actions**.
+
+Puis fusionner la pull request dans `main`. Le site est publié automatiquement (onglet **Actions**, « Publication du site »). Si la fusion a eu lieu avant l'activation : **Actions › Publication du site (GitHub Pages) › Run workflow**.
+
+### 2. Installer le chargeur dans la feuille (un seul copier-coller)
+
+1. Ouvrir la feuille **Fichier clients dépannages** › menu **Extensions › Apps Script**.
+2. Remplacer tout le contenu de `Code.gs` par le fichier [`apps-script/Code.gs`](apps-script/Code.gs) (environ 200 lignes). **Enregistrer** 💾.
+3. ⚙️ **Paramètres du projet** › Fuseau horaire : **(GMT+01:00) Paris**.
+4. **Déployer › Nouveau déploiement** › type **Application Web** :
+   - *Exécuter en tant que* : **Moi** ;
+   - *Qui a accès* : **Tout le monde** (indispensable pour que le site GitHub puisse lui parler ; les données restent protégées par la clé secrète) ;
+   - **Déployer** › **Autoriser l'accès** › choisir votre compte › « Google n'a pas validé cette application » : **Paramètres avancés › Accéder à … (non sécurisé)** › **Autoriser**.
+5. **Copier l'URL de l'application Web** (elle se termine par `/exec`).
+
+### 3. Connecter vos appareils
+
+1. Recharger la feuille Google Sheets : un menu **Dépannages** apparaît.
+2. **Dépannages › Lien de connexion** : coller l'URL `/exec` › **Enregistrer l'adresse**.
+3. **Copier le lien** affiché et l'ouvrir **une fois** sur chaque téléphone / ordinateur (envoyez-le-vous par e-mail ou SMS). L'appareil reste connecté.
+4. Sur téléphone, l'ajouter à l'écran d'accueil : **Partager › Sur l'écran d'accueil** (iPhone) ou **⋮ › Ajouter à l'écran d'accueil** (Android).
+   Sur iPhone, l'icône de l'écran d'accueil a sa propre mémoire : si elle demande la connexion, collez le lien dans le champ prévu (icône ⚙︎ en haut).
+
+## Faire évoluer l'application
+
+1. Demander la modification (à Claude ou autre) : elle arrive sous forme de **pull request** sur GitHub.
+2. Les **tests automatiques** se lancent sur la pull request (onglet *Checks*).
+3. **Fusionner** la pull request : c'est tout. Pour appliquer le code serveur immédiatement plutôt que sous 5 minutes : menu **Dépannages › Appliquer les mises à jour GitHub maintenant**.
+
+À recoller dans Apps Script seulement si `apps-script/Code.gs` lui-même change (rare : par exemple si une nouvelle autorisation Google est nécessaire). La pull request le signalera.
+
+## Sécurité
+
+- Le site GitHub Pages est public mais **ne contient aucune donnée** : sans la clé, il affiche seulement l'écran de connexion.
+- La clé secrète est enregistrée dans Apps Script et sur vos appareils ; le lien de connexion la contient, **ne le partagez pas**.
+- Téléphone perdu : **Dépannages › Changer la clé**, puis rouvrir le nouveau lien sur vos appareils.
+- Le code exécuté par Google vient de la branche `main` du dépôt : seules les personnes autorisées à fusionner sur ce dépôt peuvent le modifier. Le dépôt doit rester **public** (sinon Google ne peut plus lire `backend/api.js`).
+
+## Données enregistrées
+
+**Onglet Interventions** : ID (`INT-0001`…), nom, prénom, téléphone, adresse, appareil, panne / travaux, date de l'appel, date d'intervention, pièce utilisée, montant pièce (€), montant réglé (€), terminé (case à cocher), lien du dossier photos, créé le, modifié le, marge (calculée : réglé − pièce).
+
+**Onglet Factures** : ID (`FAC-0001`…), date facture, fournisseur, n° facture, pièce, montant (€), intervention liée (vide = stock), client, lien du fichier, ajoutée le.
+Fichiers rangés dans `Factures pièces/<année>/` et nommés `date_fournisseur_numéro_ID` (ex. `2026-11-12_Pieces-Express_FA-1234_FAC-0007.pdf`).
+
+**Onglet Récapitulatif** : interventions terminées / en cours, total pièces, total réglé, marge, total des factures archivées.
+
+Dans Google Drive, tout est dans le dossier **Dépannages électroménager** :
+
+```
+Dépannages électroménager/
+├── Fichier clients dépannages        (feuille)
+├── Photos interventions/INT-0001 - Nom Prénom/…
+└── Factures pièces/2026/…
+```
+
+## En cas de problème
+
+| Problème | Solution |
+|---|---|
+| L'application demande la connexion | Rouvrir le lien de connexion (menu Dépannages › Lien de connexion). |
+| « Clé de connexion invalide » | La clé a été changée : rouvrir le nouveau lien. |
+| « Pas de connexion au serveur » | Vérifier le réseau ; vérifier que le déploiement Apps Script est bien en accès **Tout le monde**. |
+| « Impossible de télécharger le code depuis GitHub » | Le dépôt est privé ou `backend/api.js` n'est pas dans `main`. |
+| Le site GitHub affiche une erreur 404 | GitHub Pages n'est pas activé (étape 1) ou la publication n'a pas encore tourné. |
 
 ## Structure du dépôt
 
 ```
-apps-script/
-  Code.gs           # serveur : lecture/écriture de la feuille, photos Drive
-  Index.html        # interface (liste, fiche, photos)
-  appsscript.json   # manifeste (fuseau Paris, application web privée)
+web/                  interface (publiée sur GitHub Pages)
+backend/api.js        logique serveur, lue automatiquement par Apps Script
+apps-script/Code.gs   chargeur à coller une seule fois dans la feuille
+tests/                tests automatiques (services Google simulés)
+.github/workflows/    tests sur chaque pull request + publication du site
 ```
+
+Tests en local : `node --test tests/backend.test.js` et, avec Playwright installé, `node --test tests/web.test.js`.

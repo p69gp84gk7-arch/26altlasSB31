@@ -1,606 +1,205 @@
 /**
- * Fichier clients – Dépannages électroménager
+ * Fichier clients – Dépannages électroménager : CHARGEUR (à coller une seule fois).
  *
- * Application web Google Apps Script :
- *  - les fiches d'intervention sont stockées dans la feuille Google Sheets « Interventions » ;
- *  - les photos sont rangées dans Google Drive, un sous-dossier par intervention,
- *    à l'intérieur du dossier « Photos interventions » ;
- *  - les factures des pièces commandées sont archivées dans le dossier Drive
- *    « Factures pièces » (un sous-dossier par année) et listées dans l'onglet « Factures ».
+ * Ce petit script relie l'application (hébergée sur GitHub Pages) à votre feuille
+ * Google Sheets et à votre Google Drive. Il ne contient pas la logique de l'application :
+ * il télécharge le fichier backend/api.js depuis GitHub (branche main) et l'exécute.
+ * Les modifications fusionnées sur GitHub sont donc appliquées automatiquement,
+ * sans rien recoller ici.
  *
- * Voir README.md pour l'installation.
+ * Sécurité : l'accès est protégé par une clé secrète (menu Dépannages › Lien de connexion).
+ * Sans cette clé, l'API refuse toute demande.
  */
 
-// ---------------------------------------------------------------------------
-// Configuration : identifiants de la feuille et des dossiers dans Drive.
-// (créés dans le dossier Drive « Dépannages électroménager »)
-// ---------------------------------------------------------------------------
-var CONFIG = {
-  SPREADSHEET_ID: '1n6WC_Ik14bE6ZwapDIAAXgPPw8xaqzCUeX0QENBxons',
-  PHOTOS_FOLDER_ID: '1jgvigMTAK_tkB3WVTiqkmEa93CGMLKQh',
-  FACTURES_FOLDER_ID: '1X2txYHkLIRCRfKAw1SOZR3qR1Egu69X8',
-  SHEET_NAME: 'Interventions',
-  FACTURES_SHEET_NAME: 'Factures',
-  ID_PREFIX: 'INT-',
-  FACTURE_PREFIX: 'FAC-',
-  MAX_FILE_MB: 20
-};
-
-// Ordre des colonnes A → P de la feuille « Interventions ».
-// La colonne Q (Marge) est calculée par une formule dans la feuille : le script n'y écrit jamais.
-var COLUMNS = [
-  'id',               // A  ID
-  'nom',              // B  Nom
-  'prenom',           // C  Prénom
-  'telephone',        // D  Téléphone
-  'adresse',          // E  Adresse
-  'appareil',         // F  Appareil
-  'panne',            // G  Panne / travaux
-  'dateAppel',        // H  Date de l'appel
-  'dateIntervention', // I  Date d'intervention
-  'piece',            // J  Pièce utilisée
-  'montantPiece',     // K  Montant pièce (€)
-  'montantRegle',     // L  Montant réglé (€)
-  'termine',          // M  Terminé
-  'dossierPhotos',    // N  Dossier photos (lien Drive)
-  'creeLe',           // O  Créé le
-  'modifieLe'         // P  Modifié le
-];
-var COL = {};
-COLUMNS.forEach(function (name, i) { COL[name] = i; });
-var NB_COLS = COLUMNS.length;
-
-// Ordre des colonnes A → J de l'onglet « Factures ».
-var FAC_COLUMNS = [
-  'id',           // A  ID
-  'date',         // B  Date facture
-  'fournisseur',  // C  Fournisseur
-  'numero',       // D  N° facture
-  'piece',        // E  Pièce
-  'montant',      // F  Montant (€)
-  'intervention', // G  Intervention (ID INT-xxxx, vide = stock)
-  'client',       // H  Client (nom de l'intervention liée)
-  'fichier',      // I  Fichier (lien Drive)
-  'ajouteeLe'     // J  Ajoutée le
-];
-var FCOL = {};
-FAC_COLUMNS.forEach(function (name, i) { FCOL[name] = i; });
-var NB_FAC_COLS = FAC_COLUMNS.length;
+var GITHUB_REPO = 'p69gp84gk7-arch/26altlasSB31';
+var GITHUB_BRANCH = 'main';
+var API_SOURCE_URL = 'https://raw.githubusercontent.com/' + GITHUB_REPO + '/' + GITHUB_BRANCH + '/backend/api.js';
+var APP_URL = 'https://' + GITHUB_REPO.split('/')[0] + '.github.io/' + GITHUB_REPO.split('/')[1] + '/';
+var CACHE_FRESH_SECONDS = 300;    // le code est relu sur GitHub toutes les 5 minutes au plus
+var CACHE_BACKUP_SECONDS = 21600; // copie de secours si GitHub est momentanément inaccessible
 
 // ---------------------------------------------------------------------------
-// Point d'entrée de l'application web
+// API appelée par l'application
 // ---------------------------------------------------------------------------
+
+function doPost(e) {
+  var req;
+  try {
+    req = JSON.parse(e.postData.contents);
+  } catch (err) {
+    return json_({ ok: false, error: 'Requête invalide.' });
+  }
+  if (!checkKey_(req.key)) {
+    return json_({ ok: false, code: 'AUTH',
+      error: 'Clé de connexion invalide. Dans la feuille : menu Dépannages › Lien de connexion.' });
+  }
+  try {
+    if (req.action === 'reload') {
+      return json_({ ok: true, data: { version: loadApi_(true).VERSION } });
+    }
+    var api = loadApi_(false);
+    var fn = api.ACTIONS[req.action];
+    if (typeof fn !== 'function') throw new Error('Action inconnue : ' + req.action);
+    var data = fn.apply(null, req.args || []);
+    return json_({ ok: true, data: data === undefined ? null : data });
+  } catch (err) {
+    return json_({ ok: false, error: (err && err.message) || String(err) });
+  }
+}
+
+/** Simple vérification que l'API est en ligne (ne renvoie aucune donnée). */
 function doGet() {
-  return HtmlService.createHtmlOutputFromFile('Index')
-    .setTitle('Dépannages – Fichier clients')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, maximum-scale=1');
+  return json_({ ok: true, message: 'API Dépannages en ligne. Application : ' + APP_URL });
 }
 
-/** Ajoute un menu « Dépannages » dans la feuille (si le script est lié à la feuille). */
+// ---------------------------------------------------------------------------
+// Menu de la feuille
+// ---------------------------------------------------------------------------
+
 function onOpen() {
-  try {
-    SpreadsheetApp.getUi()
-      .createMenu('Dépannages')
-      .addItem("Ouvrir l'application", 'ouvrirApplication')
-      .addToUi();
-  } catch (e) {
-    // Script autonome : pas d'interface de feuille, rien à faire.
+  SpreadsheetApp.getUi()
+    .createMenu('Dépannages')
+    .addItem('Lien de connexion', 'afficherLienConnexion')
+    .addItem('Appliquer les mises à jour GitHub maintenant', 'mettreAJourMaintenant')
+    .addSeparator()
+    .addItem('Changer la clé (déconnecte tous les appareils)', 'changerCle')
+    .addToUi();
+}
+
+function afficherLienConnexion() {
+  var key = getOrCreateKey_();
+  var props = PropertiesService.getScriptProperties();
+  var url = props.getProperty('WEBAPP_URL') || '';
+  if (!url) {
+    var guess = '';
+    try { guess = ScriptApp.getService().getUrl() || ''; } catch (e) { /* pas encore déployé */ }
+    if (/\/exec$/.test(guess)) url = guess;
   }
+  var t = HtmlService.createTemplate(DIALOG_HTML_);
+  t.key = key;
+  t.url = url;
+  t.appUrl = APP_URL;
+  SpreadsheetApp.getUi().showModalDialog(t.evaluate().setWidth(520).setHeight(430), 'Lien de connexion');
 }
 
-function ouvrirApplication() {
-  var url = ScriptApp.getService().getUrl();
-  var html = url
-    ? '<p style="font-family:Arial">Lien de l\'application :</p>' +
-      '<p><a href="' + url + '" target="_blank" style="font-family:Arial;font-size:16px">Ouvrir le fichier clients</a></p>'
-    : '<p style="font-family:Arial">L\'application n\'est pas encore déployée. ' +
-      'Dans l\'éditeur Apps Script : Déployer › Nouveau déploiement › Application Web.</p>';
-  SpreadsheetApp.getUi().showModalDialog(
-    HtmlService.createHtmlOutput(html).setWidth(360).setHeight(140),
-    'Fichier clients'
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Fonctions appelées par l'application (google.script.run)
-// ---------------------------------------------------------------------------
-
-/** Renvoie toutes les interventions, la plus récente en premier. */
-function listInterventions() {
-  var sh = getSheet_();
-  var last = lastDataRow_(sh);
-  if (last < 2) return [];
-  var tz = getTimeZone_();
-  var values = sh.getRange(2, 1, last - 1, NB_COLS).getValues();
-  var out = [];
-  values.forEach(function (row) {
-    if (String(row[COL.id]).trim() === '') return;
-    out.push(toRecord_(row, tz));
-  });
-  out.reverse();
-  return out;
-}
-
-/**
- * Crée ou met à jour une intervention.
- * @param {Object} data champs du formulaire (id vide = nouvelle fiche)
- * @return {Object} la fiche enregistrée
- */
-function saveIntervention(data) {
-  data = data || {};
-  if (!String(data.nom || '').trim()) {
-    throw new Error('Le nom du client est obligatoire.');
+/** Appelé par la boîte de dialogue : mémorise l'adresse /exec du déploiement. */
+function enregistrerAdresseApi(url) {
+  url = String(url || '').trim();
+  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) {
+    throw new Error("L'adresse doit commencer par https://script.google.com/ et se terminer par /exec");
   }
-  var lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    var sh = getSheet_();
-    var tz = getTimeZone_();
-    var now = new Date();
-    var rowIndex = data.id ? findRow_(sh, data.id) : -1;
-    var existing = null;
-
-    if (data.id && rowIndex < 0) {
-      throw new Error('Intervention introuvable : ' + data.id);
-    }
-    if (rowIndex > 0) {
-      existing = sh.getRange(rowIndex, 1, 1, NB_COLS).getValues()[0];
-    } else {
-      rowIndex = lastDataRow_(sh) + 1;
-    }
-
-    var row = new Array(NB_COLS);
-    row[COL.id] = existing ? existing[COL.id] : nextId_(sh);
-    row[COL.nom] = clean_(data.nom);
-    row[COL.prenom] = clean_(data.prenom);
-    row[COL.telephone] = clean_(data.telephone);
-    row[COL.adresse] = clean_(data.adresse);
-    row[COL.appareil] = clean_(data.appareil);
-    row[COL.panne] = clean_(data.panne);
-    row[COL.dateAppel] = parseDate_(data.dateAppel);
-    row[COL.dateIntervention] = parseDate_(data.dateIntervention);
-    row[COL.piece] = clean_(data.piece);
-    row[COL.montantPiece] = parseAmount_(data.montantPiece);
-    row[COL.montantRegle] = parseAmount_(data.montantRegle);
-    row[COL.termine] = data.termine === true || data.termine === 'true';
-    row[COL.dossierPhotos] = existing ? existing[COL.dossierPhotos] : '';
-    row[COL.creeLe] = existing ? existing[COL.creeLe] : now;
-    row[COL.modifieLe] = now;
-
-    // Le téléphone est enregistré comme texte (garde le 0 initial).
-    var range = sh.getRange(rowIndex, 1, 1, NB_COLS);
-    sh.getRange(rowIndex, COL.telephone + 1).setNumberFormat('@');
-    range.setValues([row]);
-
-    // Si le client a été renommé, on renomme aussi son dossier photos.
-    if (existing && row[COL.dossierPhotos]) {
-      var folder = folderFromUrl_(row[COL.dossierPhotos]);
-      if (folder) {
-        var wanted = folderName_(row);
-        if (folder.getName() !== wanted) folder.setName(wanted);
-      }
-    }
-
-    SpreadsheetApp.flush();
-    return toRecord_(row, tz);
-  } finally {
-    lock.releaseLock();
-  }
+  PropertiesService.getScriptProperties().setProperty('WEBAPP_URL', url);
+  return url;
 }
 
-/** Supprime la ligne de l'intervention. Le dossier photos est conservé dans Drive. */
-function deleteIntervention(id) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    var sh = getSheet_();
-    var rowIndex = findRow_(sh, id);
-    if (rowIndex < 0) throw new Error('Intervention introuvable : ' + id);
-    sh.deleteRow(rowIndex);
-    return true;
-  } finally {
-    lock.releaseLock();
-  }
+function mettreAJourMaintenant() {
+  var api = loadApi_(true);
+  SpreadsheetApp.getUi().alert('Code à jour (version ' + api.VERSION + ').');
 }
 
-/** Liste les photos d'une intervention (sans leur contenu). */
-function listPhotos(id) {
-  var folder = getInterventionFolder_(id, false);
-  if (!folder) return { folderUrl: '', photos: [] };
-  var photos = [];
-  var it = folder.getFiles();
-  while (it.hasNext()) {
-    var f = it.next();
-    if (String(f.getMimeType()).indexOf('image/') !== 0) continue;
-    photos.push({
-      id: f.getId(),
-      name: f.getName(),
-      url: f.getUrl(),
-      created: f.getDateCreated().getTime()
-    });
-  }
-  photos.sort(function (a, b) { return a.created - b.created; });
-  return { folderUrl: folder.getUrl(), photos: photos };
-}
-
-/**
- * Enregistre une photo dans le dossier de l'intervention.
- * @param {string} id identifiant de l'intervention
- * @param {string} fileName nom du fichier
- * @param {string} dataUrl image encodée « data:image/jpeg;base64,... »
- */
-function uploadPhoto(id, fileName, dataUrl) {
-  var match = /^data:([^;]+);base64,(.*)$/.exec(dataUrl || '');
-  if (!match) throw new Error('Image invalide.');
-  var mime = match[1];
-  if (mime.indexOf('image/') !== 0) throw new Error("Le fichier n'est pas une image.");
-  var folder = getInterventionFolder_(id, true);
-  var stamp = Utilities.formatDate(new Date(), getTimeZone_(), 'yyyy-MM-dd_HH-mm-ss');
-  var name = stamp + '_' + String(fileName || 'photo.jpg').replace(/[\\/:*?"<>|]/g, '_');
-  var blob = Utilities.newBlob(Utilities.base64Decode(match[2]), mime, name);
-  var f = folder.createFile(blob);
-  return { id: f.getId(), name: f.getName(), url: f.getUrl(), created: f.getDateCreated().getTime() };
-}
-
-/** Renvoie le contenu d'une photo (data URL) pour l'afficher dans l'application. */
-function getPhotoData(fileId) {
-  var f = checkPhoto_(fileId);
-  var blob = f.getBlob();
-  return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
-}
-
-/** Met une photo à la corbeille Drive (récupérable pendant 30 jours). */
-function deletePhoto(fileId) {
-  checkPhoto_(fileId).setTrashed(true);
-  return true;
-}
-
-/** Liens utiles affichés dans l'application. */
-function getLinks() {
-  return {
-    sheetUrl: SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getUrl(),
-    photosUrl: DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID).getUrl(),
-    facturesUrl: DriveApp.getFolderById(CONFIG.FACTURES_FOLDER_ID).getUrl()
-  };
-}
-
-// ---------------------------------------------------------------------------
-// Factures des pièces commandées
-// ---------------------------------------------------------------------------
-
-/** Renvoie toutes les factures archivées, la plus récente en premier. */
-function listFactures() {
-  var sh = getSheet_(CONFIG.FACTURES_SHEET_NAME);
-  var last = lastDataRow_(sh);
-  if (last < 2) return [];
-  var tz = getTimeZone_();
-  var out = [];
-  sh.getRange(2, 1, last - 1, NB_FAC_COLS).getValues().forEach(function (row) {
-    if (String(row[FCOL.id]).trim() !== '') out.push(factureToRecord_(row, tz));
-  });
-  out.sort(function (a, b) {
-    return String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id));
-  });
-  return out;
-}
-
-/**
- * Archive une nouvelle facture ou met à jour ses informations.
- * Le fichier est rangé dans « Factures pièces/<année> » et renommé
- * « date_fournisseur_numéro_ID » pour être retrouvé facilement dans Drive.
- * @param {Object} data informations (id vide = nouvelle facture)
- * @param {Object=} file {name, dataUrl} obligatoire pour une nouvelle facture
- */
-function saveFacture(data, file) {
-  data = data || {};
-  var date = parseDate_(data.date);
-  if (!date) throw new Error('La date de la facture est obligatoire.');
-  var montant = parseAmount_(data.montant);
-
-  var lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    var sh = getSheet_(CONFIG.FACTURES_SHEET_NAME);
-    var tz = getTimeZone_();
-    var rowIndex = data.id ? findRow_(sh, data.id) : -1;
-    if (data.id && rowIndex < 0) throw new Error('Facture introuvable : ' + data.id);
-    var existing = rowIndex > 0 ? sh.getRange(rowIndex, 1, 1, NB_FAC_COLS).getValues()[0] : null;
-    if (!existing) {
-      if (!file || !file.dataUrl) throw new Error('Ajoutez le fichier de la facture (PDF ou photo).');
-      rowIndex = lastDataRow_(sh) + 1;
-    }
-
-    // Intervention liée (facultative : pièce commandée pour le stock).
-    var interventionId = clean_(data.intervention);
-    var client = '';
-    if (interventionId) {
-      var ish = getSheet_();
-      var irow = findRow_(ish, interventionId);
-      if (irow < 0) throw new Error('Intervention introuvable : ' + interventionId);
-      var iv = ish.getRange(irow, 1, 1, NB_COLS).getValues()[0];
-      client = [iv[COL.nom], iv[COL.prenom]].join(' ').trim();
-    }
-
-    var row = new Array(NB_FAC_COLS);
-    row[FCOL.id] = existing ? existing[FCOL.id] : nextId_(sh, CONFIG.FACTURE_PREFIX);
-    row[FCOL.date] = date;
-    row[FCOL.fournisseur] = clean_(data.fournisseur);
-    row[FCOL.numero] = clean_(data.numero);
-    row[FCOL.piece] = clean_(data.piece);
-    row[FCOL.montant] = montant;
-    row[FCOL.intervention] = interventionId;
-    row[FCOL.client] = client;
-    row[FCOL.fichier] = existing ? existing[FCOL.fichier] : '';
-    row[FCOL.ajouteeLe] = existing ? existing[FCOL.ajouteeLe] : new Date();
-
-    var yearFolder = getYearFolder_(date, tz);
-    var baseName = factureFileName_(row, tz);
-    if (existing) {
-      // Renomme / déplace le fichier si la date, le fournisseur ou le numéro ont changé.
-      var f = factureFileFromUrl_(row[FCOL.fichier]);
-      if (f) {
-        var ext = extension_(f.getName(), f.getMimeType());
-        if (f.getName() !== baseName + ext) f.setName(baseName + ext);
-        var inYear = false, parents = f.getParents();
-        while (parents.hasNext()) { if (parents.next().getId() === yearFolder.getId()) inYear = true; }
-        if (!inYear) f.moveTo(yearFolder);
-      }
-    } else {
-      var blob = dataUrlToBlob_(file.dataUrl, baseName);
-      var mime = blob.getContentType();
-      if (mime !== 'application/pdf' && mime.indexOf('image/') !== 0) {
-        throw new Error('Format non accepté : PDF ou image uniquement.');
-      }
-      blob.setName(baseName + extension_(file.name, mime));
-      row[FCOL.fichier] = yearFolder.createFile(blob).getUrl();
-    }
-
-    sh.getRange(rowIndex, FCOL.numero + 1).setNumberFormat('@');
-    sh.getRange(rowIndex, 1, 1, NB_FAC_COLS).setValues([row]);
-    SpreadsheetApp.flush();
-    return factureToRecord_(row, tz);
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/** Supprime une facture : la ligne est retirée et le fichier part à la corbeille Drive (30 jours). */
-function deleteFacture(id) {
-  var lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    var sh = getSheet_(CONFIG.FACTURES_SHEET_NAME);
-    var rowIndex = findRow_(sh, id);
-    if (rowIndex < 0) throw new Error('Facture introuvable : ' + id);
-    var url = sh.getRange(rowIndex, FCOL.fichier + 1).getValue();
-    var f = factureFileFromUrl_(url);
-    if (f) f.setTrashed(true);
-    sh.deleteRow(rowIndex);
-    return true;
-  } finally {
-    lock.releaseLock();
-  }
+function changerCle() {
+  var ui = SpreadsheetApp.getUi();
+  var ok = ui.alert('Changer la clé ?',
+    'Tous les téléphones et ordinateurs connectés devront rouvrir le nouveau lien de connexion.',
+    ui.ButtonSet.OK_CANCEL);
+  if (ok !== ui.Button.OK) return;
+  PropertiesService.getScriptProperties().setProperty('API_KEY', newKey_());
+  afficherLienConnexion();
 }
 
 // ---------------------------------------------------------------------------
 // Fonctions internes
 // ---------------------------------------------------------------------------
 
-function getSpreadsheet_() {
-  return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
-}
+var _api = null;
 
-function getSheet_(name) {
-  name = name || CONFIG.SHEET_NAME;
-  var sh = getSpreadsheet_().getSheetByName(name);
-  if (!sh) throw new Error('Onglet « ' + name + ' » introuvable dans la feuille.');
-  return sh;
-}
-
-function getTimeZone_() {
-  return getSpreadsheet_().getSpreadsheetTimeZone() || Session.getScriptTimeZone();
-}
-
-/** Dernière ligne dont la colonne A (ID) est remplie. */
-function lastDataRow_(sh) {
-  var last = sh.getLastRow();
-  if (last < 2) return 1;
-  var ids = sh.getRange(2, 1, last - 1, 1).getValues();
-  for (var i = ids.length - 1; i >= 0; i--) {
-    if (String(ids[i][0]).trim() !== '') return i + 2;
-  }
-  return 1;
-}
-
-function findRow_(sh, id) {
-  var last = lastDataRow_(sh);
-  if (last < 2) return -1;
-  var ids = sh.getRange(2, 1, last - 1, 1).getValues();
-  for (var i = 0; i < ids.length; i++) {
-    if (String(ids[i][0]) === String(id)) return i + 2;
-  }
-  return -1;
-}
-
-function nextId_(sh, prefix) {
-  var last = lastDataRow_(sh);
-  var max = 0;
-  if (last >= 2) {
-    sh.getRange(2, 1, last - 1, 1).getValues().forEach(function (r) {
-      var m = /(\d+)\s*$/.exec(String(r[0]));
-      if (m) max = Math.max(max, parseInt(m[1], 10));
-    });
-  }
-  return (prefix || CONFIG.ID_PREFIX) + ('0000' + (max + 1)).slice(-4);
-}
-
-function toRecord_(row, tz) {
-  var rec = rowToObject_(COLUMNS, row, tz);
-  rec.id = String(rec.id);
-  rec.telephone = String(rec.telephone);
-  rec.termine = rec.termine === true;
-  return rec;
-}
-
-function factureToRecord_(row, tz) {
-  var rec = rowToObject_(FAC_COLUMNS, row, tz);
-  rec.id = String(rec.id);
-  rec.numero = String(rec.numero);
-  rec.intervention = String(rec.intervention);
-  return rec;
-}
-
-/** Ligne de feuille → objet ; les dates deviennent du texte (google.script.run ne transmet pas les Date). */
-function rowToObject_(columns, row, tz) {
-  var rec = {};
-  columns.forEach(function (name, i) {
-    var v = row[i];
-    if (v instanceof Date) {
-      var fmt = /(Le)$/.test(name) ? 'dd/MM/yyyy HH:mm' : 'yyyy-MM-dd';
-      v = Utilities.formatDate(v, tz, fmt);
-    } else if (v === null || v === undefined) {
-      v = '';
-    }
-    rec[name] = v;
-  });
-  return rec;
-}
-
-function clean_(v) {
-  return String(v === null || v === undefined ? '' : v).trim();
-}
-
-/** « 2026-11-11 » → Date à midi (évite les décalages de fuseau horaire). */
-function parseDate_(v) {
-  var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(clean_(v));
-  if (!m) return '';
-  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
-}
-
-/** « 45,90 » ou « 45.90 € » → 45.9 ; vide → cellule vide. */
-function parseAmount_(v) {
-  var s = clean_(v).replace(/\s|€/g, '').replace(',', '.');
-  if (s === '') return '';
-  var n = Number(s);
-  if (isNaN(n)) throw new Error('Montant invalide : ' + v);
-  return Math.round(n * 100) / 100;
-}
-
-function folderName_(row) {
-  return [row[COL.id], '-', row[COL.nom], row[COL.prenom]].join(' ').replace(/\s+/g, ' ').trim();
-}
-
-function folderFromUrl_(url) {
-  var m = /folders\/([\w-]+)/.exec(String(url || ''));
-  if (!m) return null;
-  try {
-    var f = DriveApp.getFolderById(m[1]);
-    return f.isTrashed() ? null : f;
-  } catch (e) {
-    return null;
-  }
-}
-
-/** Dossier photos de l'intervention ; le crée au premier ajout de photo si besoin. */
-function getInterventionFolder_(id, create) {
-  var sh = getSheet_();
-  var rowIndex = findRow_(sh, id);
-  if (rowIndex < 0) throw new Error('Intervention introuvable : ' + id);
-  var row = sh.getRange(rowIndex, 1, 1, NB_COLS).getValues()[0];
-  var folder = folderFromUrl_(row[COL.dossierPhotos]);
-  if (folder || !create) return folder;
-
-  var lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    // Relire au cas où un autre envoi vient de créer le dossier.
-    rowIndex = findRow_(sh, id);
-    row = sh.getRange(rowIndex, 1, 1, NB_COLS).getValues()[0];
-    folder = folderFromUrl_(row[COL.dossierPhotos]);
-    if (folder) return folder;
-    folder = DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID).createFolder(folderName_(row));
-    sh.getRange(rowIndex, COL.dossierPhotos + 1).setValue(folder.getUrl());
-    SpreadsheetApp.flush();
-    return folder;
-  } finally {
-    lock.releaseLock();
-  }
-}
-
-/** Vérifie que le fichier est bien une photo rangée dans « Photos interventions ». */
-function checkPhoto_(fileId) {
-  var f = DriveApp.getFileById(fileId);
-  var parents = f.getParents();
-  while (parents.hasNext()) {
-    var p = parents.next();
-    var gp = p.getParents();
-    while (gp.hasNext()) {
-      if (gp.next().getId() === CONFIG.PHOTOS_FOLDER_ID) return f;
-    }
-  }
-  throw new Error("Cette photo n'appartient pas au dossier des interventions.");
-}
-
-/** Sous-dossier de l'année dans « Factures pièces » (créé si besoin). */
-function getYearFolder_(date, tz) {
-  var year = Utilities.formatDate(date, tz, 'yyyy');
-  var root = DriveApp.getFolderById(CONFIG.FACTURES_FOLDER_ID);
-  var it = root.getFoldersByName(year);
-  while (it.hasNext()) {
-    var f = it.next();
-    if (!f.isTrashed()) return f;
-  }
-  return root.createFolder(year);
-}
-
-/** Ex. « 2026-11-12_Pieces-Express_FA-1234_FAC-0007 » */
-function factureFileName_(row, tz) {
-  var parts = [
-    Utilities.formatDate(row[FCOL.date], tz, 'yyyy-MM-dd'),
-    row[FCOL.fournisseur],
-    row[FCOL.numero],
-    row[FCOL.id]
-  ].filter(function (x) { return String(x).trim() !== ''; });
-  return parts.join('_').replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '-');
-}
-
-function extension_(name, mime) {
-  var m = /(\.[A-Za-z0-9]{2,5})$/.exec(String(name || ''));
-  if (m) return m[1].toLowerCase();
-  if (mime === 'application/pdf') return '.pdf';
-  if (mime === 'image/png') return '.png';
-  if (mime === 'image/heic') return '.heic';
-  return '.jpg';
-}
-
-function dataUrlToBlob_(dataUrl, name) {
-  var m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl || '');
-  if (!m) throw new Error('Fichier invalide.');
-  var bytes = Utilities.base64Decode(m[2]);
-  if (bytes.length > CONFIG.MAX_FILE_MB * 1024 * 1024) {
-    throw new Error('Fichier trop volumineux (' + CONFIG.MAX_FILE_MB + ' Mo maximum).');
-  }
-  return Utilities.newBlob(bytes, m[1], name);
-}
-
-/** Fichier de facture à partir de son lien, uniquement s'il est rangé dans « Factures pièces ». */
-function factureFileFromUrl_(url) {
-  var m = /\/d\/([\w-]+)/.exec(String(url || ''));
-  if (!m) return null;
-  try {
-    var f = DriveApp.getFileById(m[1]);
-    if (f.isTrashed()) return null;
-    var parents = f.getParents();
-    while (parents.hasNext()) {
-      var p = parents.next();
-      if (p.getId() === CONFIG.FACTURES_FOLDER_ID) return f;
-      var gp = p.getParents();
-      while (gp.hasNext()) {
-        if (gp.next().getId() === CONFIG.FACTURES_FOLDER_ID) return f;
+/** Télécharge (ou reprend du cache) backend/api.js et renvoie son objet API. */
+function loadApi_(force) {
+  if (_api && !force) return _api;
+  var cache = CacheService.getScriptCache();
+  var code = force ? null : cache.get('api_fresh');
+  if (!code) {
+    var res = null;
+    try {
+      res = UrlFetchApp.fetch(API_SOURCE_URL + '?t=' + Date.now(), { muteHttpExceptions: true });
+    } catch (e) { res = null; }
+    if (res && res.getResponseCode() === 200) {
+      code = res.getContentText();
+      try {
+        cache.put('api_fresh', code, CACHE_FRESH_SECONDS);
+        cache.put('api_backup', code, CACHE_BACKUP_SECONDS);
+      } catch (e) { /* code trop gros pour le cache : il sera relu à chaque fois */ }
+    } else {
+      code = cache.get('api_backup');
+      if (!code) {
+        throw new Error('Impossible de télécharger le code depuis GitHub (' +
+          (res ? 'HTTP ' + res.getResponseCode() : 'réseau') + ').');
       }
     }
-  } catch (e) {
-    // fichier supprimé ou inaccessible
   }
-  return null;
+  _api = new Function(code + '\n;return API;')();
+  return _api;
 }
+
+function checkKey_(key) {
+  var expected = PropertiesService.getScriptProperties().getProperty('API_KEY');
+  if (!expected || typeof key !== 'string' || key.length !== expected.length) return false;
+  var diff = 0;
+  for (var i = 0; i < key.length; i++) diff |= key.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
+}
+
+function getOrCreateKey_() {
+  var props = PropertiesService.getScriptProperties();
+  var key = props.getProperty('API_KEY');
+  if (!key) {
+    key = newKey_();
+    props.setProperty('API_KEY', key);
+  }
+  return key;
+}
+
+function newKey_() {
+  return (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '');
+}
+
+function json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
+ * Jamais appelée : sert seulement à ce que Google demande, dès l'installation,
+ * les autorisations dont le code téléchargé depuis GitHub a besoin
+ * (Google Sheets, Google Drive, accès à GitHub).
+ */
+function autorisations_() {
+  SpreadsheetApp.openById('x');
+  DriveApp.getFolderById('x').createFolder('x');
+  DriveApp.getFileById('x').setTrashed(true);
+  UrlFetchApp.fetch('https://raw.githubusercontent.com/');
+}
+
+var DIALOG_HTML_ = [
+  '<div style="font-family:Arial,sans-serif;font-size:14px;line-height:1.4">',
+  '<p><b>1.</b> Adresse de l\'API (URL de l\'application Web copiée lors du déploiement, se termine par <code>/exec</code>) :</p>',
+  '<input id="u" style="width:100%;padding:6px" value="<?= url ?>" placeholder="https://script.google.com/macros/s/.../exec">',
+  '<button onclick="save()" style="margin-top:6px">Enregistrer l\'adresse</button> <span id="m" style="color:#b42318"></span>',
+  '<p><b>2.</b> Ouvrez ce lien <b>une fois</b> sur chaque téléphone / ordinateur (envoyez-le-vous par e-mail ou SMS) :</p>',
+  '<textarea id="l" readonly style="width:100%;height:90px;font-size:12px" onclick="this.select()"></textarea>',
+  '<p><button onclick="copy()">Copier le lien</button> <a id="o" href="#" target="_blank">Ouvrir l\'application</a></p>',
+  '<p style="color:#667085;font-size:12px">Ce lien contient votre clé secrète : ne le partagez pas. ',
+  'En cas de perte d\'un téléphone : menu Dépannages › Changer la clé.</p>',
+  '</div>',
+  '<script>',
+  'var KEY = <?!= JSON.stringify(key) ?>, APP = <?!= JSON.stringify(appUrl) ?>;',
+  'function render(){var u=document.getElementById("u").value.trim();',
+  ' var link=u?APP+"#connexion="+encodeURIComponent(u)+"&cle="+KEY:"(enregistrez d\'abord l\'adresse ci-dessus)";',
+  ' document.getElementById("l").value=link; document.getElementById("o").href=u?link:"#";}',
+  'function save(){var u=document.getElementById("u").value; document.getElementById("m").textContent="…";',
+  ' google.script.run.withSuccessHandler(function(){document.getElementById("m").style.color="#1e7b45";',
+  ' document.getElementById("m").textContent="Enregistrée"; render();})',
+  ' .withFailureHandler(function(e){document.getElementById("m").textContent=e.message;}).enregistrerAdresseApi(u);}',
+  'function copy(){var t=document.getElementById("l"); t.select(); document.execCommand("copy");}',
+  'document.getElementById("u").addEventListener("input",render); render();',
+  '</script>'
+].join('\n');

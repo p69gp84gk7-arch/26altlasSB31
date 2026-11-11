@@ -56,7 +56,10 @@ test('connexion, interventions, photos et factures depuis le site GitHub Pages',
     await page.fill('#piece', 'Pompe de vidange');
     await page.fill('#montantPiece', '45,90');
     await page.fill('#montantRegle', '120');
-    await page.setInputFiles('#fileInput', fixture('fixture-photo.jpg'));
+    // Toucher le bouton doit ouvrir le sélecteur de fichiers (comme sur iPhone)
+    const [photoChooser] = await Promise.all([page.waitForEvent('filechooser'), page.tap('#btnAddPhoto')]);
+    assert.equal(photoChooser.isMultiple(), true);
+    await photoChooser.setFiles(fixture('fixture-photo.jpg'));
     await page.waitForFunction(() => document.querySelectorAll('.ph img').length === 1 && !document.body.innerText.includes('Envoi…'));
     assert.equal(env.rows[1][0], 'INT-0001');
     assert.equal(env.rows[1][3], '0612345678');
@@ -67,7 +70,8 @@ test('connexion, interventions, photos et factures depuis le site GitHub Pages',
     assert.equal(await page.inputValue('#fIntervention'), 'INT-0001');
     assert.equal(await page.inputValue('#fMontant'), '45,90');
     await page.fill('#fFournisseur', 'Pièces Express');
-    await page.setInputFiles('#fFile', fixture('fixture-facture.pdf'));
+    const [pdfChooser] = await Promise.all([page.waitForEvent('filechooser'), page.tap('#btnPickFile')]);
+    await pdfChooser.setFiles(fixture('fixture-facture.pdf'));
     await page.waitForFunction(() => document.getElementById('fFileName').textContent === 'fixture-facture.pdf');
     await page.click('#btnFSave');
     await page.waitForSelector('#viewForm:not(.hidden) #formFactures .item');

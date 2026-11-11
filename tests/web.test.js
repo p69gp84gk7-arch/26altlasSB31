@@ -54,6 +54,12 @@ test('connexion, interventions, photos et factures depuis le site GitHub Pages',
     await page.fill('#prenom', 'Marie');
     await page.fill('#telephone', '0612345678');
     await page.fill('#piece', 'Pompe de vidange');
+    // Listes déroulantes : valeurs de l'onglet « Listes » + nouvelle marque via « Autre… »
+    await page.waitForFunction(() => [...document.querySelectorAll('#appareil option')].some(o => o.value === 'Lave-linge'));
+    await page.selectOption('#appareil', 'Lave-linge');
+    await page.selectOption('#marque', '__autre__');
+    await page.fill('#marqueAutre', 'Marque Inconnue');
+    await page.fill('#dateDiagnostic', '2026-11-10');
     await page.fill('#montantPiece', '45,90');
     await page.fill('#montantRegle', '120');
     // Toucher le bouton doit ouvrir le sélecteur de fichiers (comme sur iPhone)
@@ -63,13 +69,16 @@ test('connexion, interventions, photos et factures depuis le site GitHub Pages',
     await page.waitForFunction(() => document.querySelectorAll('.ph img').length === 1 && !document.body.innerText.includes('Envoi…'));
     assert.equal(env.rows[1][0], 'INT-0001');
     assert.equal(env.rows[1][3], '0612345678');
+    assert.equal(env.rows[1][5], 'Lave-linge');
+    assert.equal(env.rows[1][6], 'Marque Inconnue');
 
     // Facture liée depuis la fiche
     await page.click('#btnAddFacture');
     await page.waitForSelector('#viewFacture:not(.hidden)');
     assert.equal(await page.inputValue('#fIntervention'), 'INT-0001');
     assert.equal(await page.inputValue('#fMontant'), '45,90');
-    await page.fill('#fFournisseur', 'Pièces Express');
+    await page.selectOption('#fFournisseur', '__autre__');
+    await page.fill('#fFournisseurAutre', 'Pièces Express');
     const [pdfChooser] = await Promise.all([page.waitForEvent('filechooser'), page.tap('#btnPickFile')]);
     await pdfChooser.setFiles(fixture('fixture-facture.pdf'));
     await page.waitForFunction(() => document.getElementById('fFileName').textContent === 'fixture-facture.pdf');
@@ -89,6 +98,18 @@ test('connexion, interventions, photos et factures depuis le site GitHub Pages',
     await page.click('[data-tab=factures]');
     await page.waitForSelector('#fList .item');
     assert.equal(await page.locator('#fList .item').count(), 1);
+
+    // Nouvelle facture : le fournisseur déjà enregistré est proposé dans la liste
+    await page.click('#btnNewFacture');
+    const fournisseurs = await page.$$eval('#fFournisseur option', os => os.map(o => o.value));
+    assert.ok(fournisseurs.includes('Pièces Express'));
+    await page.click('#btnFBack');
+
+    // La nouvelle marque est proposée dans les fiches suivantes
+    await page.click('#btnNew');
+    const marques = await page.$$eval('#marque option', os => os.map(o => o.value));
+    assert.ok(marques.includes('Marque Inconnue') && marques.includes('Bosch'));
+    await page.click('#btnBack');
 
     // Rechargement : la connexion est gardée sur l'appareil
     await page.goto(SITE);

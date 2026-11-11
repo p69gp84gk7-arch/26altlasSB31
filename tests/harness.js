@@ -35,8 +35,12 @@ function mkSheet(header) {
       }),
       setValue: (v) => { rows[r - 1] = rows[r - 1] || []; rows[r - 1][c - 1] = v; },
       setNumberFormat: (f) => { fmt[r + ':' + c] = f; },
+      setFontWeight() { return this; }, setBackground() { return this; }, setFontColor() { return this; },
     }),
     deleteRow: (r) => rows.splice(r - 1, 1),
+    // Comme Sheets : les données à droite de la colonne se décalent d'un cran.
+    insertColumnAfter: (c) => rows.forEach(row => { while (row.length < c) row.push(''); row.splice(c, 0, ''); }),
+    setColumnWidth() {}, setColumnWidths() {}, setFrozenRows() {},
   };
 }
 
@@ -77,11 +81,15 @@ function makeEnv(options = {}) {
 
   const photosRoot = mkFolder('Photos interventions', null, PHOTOS_ID);
   const facturesRoot = mkFolder('Factures pièces', null, FACTURES_ID);
-  const sheet = mkSheet(['ID', 'Nom', 'Prénom', 'Téléphone', 'Adresse', 'Appareil', 'Panne', 'Date appel',
-    'Date intervention', 'Pièce', 'Montant pièce', 'Montant réglé', 'Terminé', 'Dossier photos', 'Créé le', 'Modifié le', 'Marge']);
+  // Titres de la feuille réelle avant l'ajout de la colonne « Marque » (mise à jour automatique testée).
+  const sheet = mkSheet(['ID', 'Nom', 'Prénom', 'Téléphone', 'Adresse', 'Appareil', 'Panne / travaux', "Date de l'appel",
+    "Date d'intervention", 'Pièce utilisée', 'Montant pièce (€)', 'Montant réglé (€)', 'Terminé', 'Dossier photos',
+    'Créé le', 'Modifié le', 'Marge (€)']);
   const fsheet = mkSheet(['ID', 'Date', 'Fournisseur', 'N°', 'Pièce', 'Montant', 'Intervention', 'Client', 'Fichier', 'Ajoutée le']);
+  const extraSheets = {};
   const ss = {
-    getSheetByName: n => (n === 'Interventions' ? sheet : n === 'Factures' ? fsheet : null),
+    getSheetByName: n => (n === 'Interventions' ? sheet : n === 'Factures' ? fsheet : extraSheets[n] || null),
+    insertSheet: n => (extraSheets[n] = mkSheet([])),
     getSpreadsheetTimeZone: () => 'Europe/Paris',
     getUrl: () => 'https://docs.google.com/spreadsheets/d/test',
   };
@@ -152,7 +160,7 @@ function makeEnv(options = {}) {
     return res.data;
   }
 
-  return { ctx, post, api, mails, items, rows: sheet._rows, frows: fsheet._rows, photosRoot, facturesRoot, props, fetches, cacheStore };
+  return { ctx, post, api, mails, items, extraSheets, rows: sheet._rows, frows: fsheet._rows, photosRoot, facturesRoot, props, fetches, cacheStore };
 }
 
 module.exports = { makeEnv, API_KEY };

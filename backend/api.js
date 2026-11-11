@@ -31,26 +31,30 @@ var CONFIG = {
   MAX_FILE_MB: 20
 };
 
-// Ordre des colonnes A → P de la feuille « Interventions ».
-// La colonne Q (Marge) est calculée par une formule dans la feuille : le script n'y écrit jamais.
+// Ordre des colonnes A → Q de la feuille « Interventions ».
+// La colonne R (Marge) est calculée par une formule dans la feuille : le script n'y écrit jamais.
 var COLUMNS = [
   'id',               // A  ID
   'nom',              // B  Nom
   'prenom',           // C  Prénom
   'telephone',        // D  Téléphone
   'adresse',          // E  Adresse
-  'appareil',         // F  Appareil
-  'panne',            // G  Panne / travaux
-  'dateAppel',        // H  Date de l'appel
-  'dateIntervention', // I  Date d'intervention
-  'piece',            // J  Pièce utilisée
-  'montantPiece',     // K  Montant pièce (€)
-  'montantRegle',     // L  Montant réglé (€)
-  'termine',          // M  Terminé
-  'dossierPhotos',    // N  Dossier photos (lien Drive)
-  'creeLe',           // O  Créé le
-  'modifieLe'         // P  Modifié le
+  'appareil',         // F  Type d'appareil
+  'marque',           // G  Marque
+  'panne',            // H  Panne / travaux
+  'dateDiagnostic',   // I  Date de diagnostic
+  'dateIntervention', // J  Date d'intervention
+  'piece',            // K  Pièce utilisée
+  'montantPiece',     // L  Montant pièce (€)
+  'montantRegle',     // M  Montant réglé (€)
+  'termine',          // N  Terminé
+  'dossierPhotos',    // O  Dossier photos (lien Drive)
+  'creeLe',           // P  Créé le
+  'modifieLe'         // Q  Modifié le
 ];
+var HEADERS = ['ID', 'Nom', 'Prénom', 'Téléphone', 'Adresse', "Type d'appareil", 'Marque', 'Panne / travaux',
+  'Date de diagnostic', "Date d'intervention", 'Pièce utilisée', 'Montant pièce (€)', 'Montant réglé (€)',
+  'Terminé', 'Dossier photos', 'Créé le', 'Modifié le'];
 var COL = {};
 COLUMNS.forEach(function (name, i) { COL[name] = i; });
 var NB_COLS = COLUMNS.length;
@@ -120,20 +124,29 @@ function saveIntervention(data) {
       rowIndex = lastDataRow_(sh) + 1;
     }
 
+    // Un champ absent de la demande (ancienne version de l'application encore ouverte)
+    // garde sa valeur actuelle au lieu d'être effacé.
+    var field = function (key, parse) {
+      if (data[key] === undefined && existing) return existing[COL[key]];
+      return parse(data[key]);
+    };
+    if (data.dateDiagnostic === undefined && data.dateAppel !== undefined) data.dateDiagnostic = data.dateAppel;
+
     var row = new Array(NB_COLS);
     row[COL.id] = existing ? existing[COL.id] : nextId_(sh);
     row[COL.nom] = clean_(data.nom);
-    row[COL.prenom] = clean_(data.prenom);
-    row[COL.telephone] = clean_(data.telephone);
-    row[COL.adresse] = clean_(data.adresse);
-    row[COL.appareil] = clean_(data.appareil);
-    row[COL.panne] = clean_(data.panne);
-    row[COL.dateAppel] = parseDate_(data.dateAppel);
-    row[COL.dateIntervention] = parseDate_(data.dateIntervention);
-    row[COL.piece] = clean_(data.piece);
-    row[COL.montantPiece] = parseAmount_(data.montantPiece);
-    row[COL.montantRegle] = parseAmount_(data.montantRegle);
-    row[COL.termine] = data.termine === true || data.termine === 'true';
+    row[COL.prenom] = field('prenom', clean_);
+    row[COL.telephone] = field('telephone', clean_);
+    row[COL.adresse] = field('adresse', clean_);
+    row[COL.appareil] = field('appareil', clean_);
+    row[COL.marque] = field('marque', clean_);
+    row[COL.panne] = field('panne', clean_);
+    row[COL.dateDiagnostic] = field('dateDiagnostic', parseDate_);
+    row[COL.dateIntervention] = field('dateIntervention', parseDate_);
+    row[COL.piece] = field('piece', clean_);
+    row[COL.montantPiece] = field('montantPiece', parseAmount_);
+    row[COL.montantRegle] = field('montantRegle', parseAmount_);
+    row[COL.termine] = field('termine', function (v) { return v === true || v === 'true'; });
     row[COL.dossierPhotos] = existing ? existing[COL.dossierPhotos] : '';
     row[COL.creeLe] = existing ? existing[COL.creeLe] : now;
     row[COL.modifieLe] = now;
@@ -224,6 +237,30 @@ function getPhotoData(fileId) {
 function deletePhoto(fileId) {
   checkPhoto_(fileId).setTrashed(true);
   return true;
+}
+
+/**
+ * Choix des listes déroulantes : onglet « Listes » (modifiable dans la feuille)
+ * + valeurs déjà enregistrées dans les interventions et les factures.
+ */
+function getListes() {
+  var sh = getListesSheet_();
+  var out = { types: [], marques: [], fournisseurs: [] };
+  var last = sh.getLastRow();
+  if (last >= 2) {
+    sh.getRange(2, 1, last - 1, 3).getValues().forEach(function (r) {
+      out.types.push(r[0]);
+      out.marques.push(r[1]);
+      out.fournisseurs.push(r[2]);
+    });
+  }
+  // Du plus ancien au plus récent : en cas d'écritures différentes, la première saisie est gardée.
+  listInterventions().reverse().forEach(function (it) {
+    out.types.push(it.appareil);
+    out.marques.push(it.marque);
+  });
+  listFactures().reverse().forEach(function (f) { out.fournisseurs.push(f.fournisseur); });
+  return { types: uniqueSorted_(out.types), marques: uniqueSorted_(out.marques), fournisseurs: uniqueSorted_(out.fournisseurs) };
 }
 
 /** Liens utiles affichés dans l'application. */
@@ -365,7 +402,69 @@ function getSheet_(name) {
   name = name || CONFIG.SHEET_NAME;
   var sh = getSpreadsheet_().getSheetByName(name);
   if (!sh) throw new Error('Onglet « ' + name + ' » introuvable dans la feuille.');
+  if (name === CONFIG.SHEET_NAME) ensureSchema_(sh);
   return sh;
+}
+
+var _schemaChecked = false;
+
+/**
+ * Met la feuille « Interventions » à jour automatiquement quand le code ajoute des colonnes :
+ * ajout de la colonne « Marque » après « Type d'appareil » (les données et la formule
+ * de marge se décalent toutes seules), puis titres de colonnes à jour.
+ */
+function ensureSchema_(sh) {
+  if (_schemaChecked) return;
+  var headers = sh.getRange(1, 1, 1, NB_COLS).getValues()[0].map(function (h) { return String(h).trim(); });
+  if (headers[6] === 'Panne / travaux') {
+    sh.insertColumnAfter(6);
+    sh.setColumnWidth(7, 130);
+    headers = sh.getRange(1, 1, 1, NB_COLS).getValues()[0].map(function (h) { return String(h).trim(); });
+  }
+  if (headers.join('|') !== HEADERS.join('|')) {
+    sh.getRange(1, 1, 1, NB_COLS).setValues([HEADERS]);
+  }
+  _schemaChecked = true;
+}
+
+var LISTES_SHEET_NAME = 'Listes';
+var LISTES_DEFAUT = {
+  types: ['Lave-linge', 'Sèche-linge', 'Lave-linge séchant', 'Lave-vaisselle', 'Réfrigérateur',
+    'Réfrigérateur-congélateur', 'Congélateur', 'Cave à vin', 'Four', 'Micro-ondes', 'Plaque de cuisson',
+    'Cuisinière', 'Hotte', 'Chauffe-eau', 'Climatisation', 'Aspirateur', 'Petit électroménager'],
+  marques: ['AEG', 'Arthur Martin', 'Beko', 'Bosch', 'Brandt', 'Candy', 'De Dietrich', 'Electrolux', 'Essentiel B',
+    'Faure', 'Gorenje', 'Grundig', 'Haier', 'Hisense', 'Hoover', 'Hotpoint', 'Indesit', 'LG', 'Liebherr', 'Listo',
+    'Miele', 'Neff', 'Panasonic', 'Proline', 'Rosières', 'Samsung', 'Sauter', 'Sharp', 'Siemens', 'Smeg',
+    'Thomson', 'Valberg', 'Vedette', 'Whirlpool']
+};
+
+/** Onglet « Listes » (créé avec des valeurs courantes s'il n'existe pas). */
+function getListesSheet_() {
+  var ss = getSpreadsheet_();
+  var sh = ss.getSheetByName(LISTES_SHEET_NAME);
+  if (sh) return sh;
+  sh = ss.insertSheet(LISTES_SHEET_NAME);
+  var n = Math.max(LISTES_DEFAUT.types.length, LISTES_DEFAUT.marques.length);
+  var rows = [["Types d'appareil", 'Marques', 'Fournisseurs']];
+  for (var i = 0; i < n; i++) {
+    rows.push([LISTES_DEFAUT.types[i] || '', LISTES_DEFAUT.marques[i] || '', '']);
+  }
+  sh.getRange(1, 1, rows.length, 3).setValues(rows);
+  sh.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#1f3864').setFontColor('#ffffff');
+  sh.setFrozenRows(1);
+  sh.setColumnWidths(1, 3, 200);
+  return sh;
+}
+
+/** Valeurs non vides, sans doublon (majuscules ignorées), triées dans l'ordre français. */
+function uniqueSorted_(values) {
+  var seen = {}, out = [];
+  values.forEach(function (v) {
+    v = clean_(v);
+    var k = v.toLowerCase();
+    if (v && !seen[k]) { seen[k] = true; out.push(v); }
+  });
+  return out.sort(function (a, b) { return a.localeCompare(b, 'fr', { sensitivity: 'base' }); });
 }
 
 function getTimeZone_() {
@@ -580,7 +679,7 @@ function factureFileFromUrl_(url) {
 // Fonctions exposées à l'application (appelées par le chargeur apps-script/Code.gs)
 // ---------------------------------------------------------------------------
 var API = {
-  VERSION: '2026-11-11.2',
+  VERSION: '2026-11-11.3',
   ACTIONS: {
     listInterventions: listInterventions,
     saveIntervention: saveIntervention,
@@ -592,6 +691,7 @@ var API = {
     listFactures: listFactures,
     saveFacture: saveFacture,
     deleteFacture: deleteFacture,
-    getLinks: getLinks
+    getLinks: getLinks,
+    getListes: getListes
   }
 };

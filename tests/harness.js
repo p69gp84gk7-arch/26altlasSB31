@@ -34,12 +34,16 @@ function mkSheet(header) {
         });
       }),
       setValue: (v) => { rows[r - 1] = rows[r - 1] || []; rows[r - 1][c - 1] = v; },
+      setFormula: (f) => { rows[r - 1] = rows[r - 1] || []; rows[r - 1][c - 1] = f; },
       setNumberFormat: (f) => { fmt[r + ':' + c] = f; },
       setFontWeight() { return this; }, setBackground() { return this; }, setFontColor() { return this; },
     }),
     deleteRow: (r) => rows.splice(r - 1, 1),
     // Comme Sheets : les données à droite de la colonne se décalent d'un cran.
     insertColumnAfter: (c) => rows.forEach(row => { while (row.length < c) row.push(''); row.splice(c, 0, ''); }),
+    insertColumnBefore: (c) => rows.forEach(row => { while (row.length < c - 1) row.push(''); row.splice(c - 1, 0, ''); }),
+    getLastColumn: () => Math.max(...rows.map(r => r.length)),
+    getMaxRows: () => Math.max(rows.length, 1000),
     setColumnWidth() {}, setColumnWidths() {}, setFrozenRows() {},
   };
 }
@@ -86,7 +90,12 @@ function makeEnv(options = {}) {
     "Date d'intervention", 'Pièce utilisée', 'Montant pièce (€)', 'Montant réglé (€)', 'Terminé', 'Dossier photos',
     'Créé le', 'Modifié le', 'Marge (€)']);
   const fsheet = mkSheet(['ID', 'Date', 'Fournisseur', 'N°', 'Pièce', 'Montant', 'Intervention', 'Client', 'Fichier', 'Ajoutée le']);
-  const extraSheets = {};
+  // Récapitulatif tel que créé à l'installation (lignes 1 à 8).
+  const recap = mkSheet(['Indicateur', 'Valeur']);
+  [['Interventions', '=COUNTA(Interventions!A2:A)'], ['Terminées', '=COUNTIF(…)'], ['En cours', '=B2-B3'],
+    ['Total pièces (€)', '=SUM(…)'], ['Total réglé par les clients (€)', '=SUM(…)'], ['Marge (€)', '=B6-B5'],
+    ['Total factures pièces archivées (€)', '=SUM(Factures!F2:F)']].forEach(r => recap._rows.push(r));
+  const extraSheets = { 'Récapitulatif': recap };
   const ss = {
     getSheetByName: n => (n === 'Interventions' ? sheet : n === 'Factures' ? fsheet : extraSheets[n] || null),
     insertSheet: n => (extraSheets[n] = mkSheet([])),

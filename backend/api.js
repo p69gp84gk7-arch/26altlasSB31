@@ -31,8 +31,9 @@ var CONFIG = {
   MAX_FILE_MB: 20
 };
 
-// Ordre des colonnes A → Q de la feuille « Interventions ».
-// La colonne R (Marge) est calculée par une formule dans la feuille : le script n'y écrit jamais.
+// Ordre des colonnes A → S de la feuille « Interventions ».
+// La colonne T (Marge) est calculée par une formule dans la feuille : le script n'y écrit jamais.
+// Les temps sont enregistrés en minutes.
 var COLUMNS = [
   'id',               // A  ID
   'nom',              // B  Nom
@@ -43,17 +44,19 @@ var COLUMNS = [
   'marque',           // G  Marque
   'panne',            // H  Panne / travaux
   'dateDiagnostic',   // I  Date de diagnostic
-  'dateIntervention', // J  Date d'intervention
-  'piece',            // K  Pièce utilisée
-  'montantPiece',     // L  Montant pièce (€)
-  'montantRegle',     // M  Montant réglé (€)
-  'termine',          // N  Terminé
-  'dossierPhotos',    // O  Dossier photos (lien Drive)
-  'creeLe',           // P  Créé le
-  'modifieLe'         // Q  Modifié le
+  'tempsDiagnostic',  // J  Temps diagnostic (min)
+  'dateIntervention', // K  Date d'intervention
+  'tempsReparation',  // L  Temps réparation (min)
+  'piece',            // M  Pièce utilisée
+  'montantPiece',     // N  Montant pièce (€)
+  'montantRegle',     // O  Montant réglé (€)
+  'termine',          // P  Terminé
+  'dossierPhotos',    // Q  Dossier photos (lien Drive)
+  'creeLe',           // R  Créé le
+  'modifieLe'         // S  Modifié le
 ];
 var HEADERS = ['ID', 'Nom', 'Prénom', 'Téléphone', 'Adresse', "Type d'appareil", 'Marque', 'Panne / travaux',
-  'Date de diagnostic', "Date d'intervention", 'Pièce utilisée', 'Montant pièce (€)', 'Montant réglé (€)',
+  'Date de diagnostic', 'Temps diagnostic (min)', "Date d'intervention", 'Temps réparation (min)', 'Pièce utilisée', 'Montant pièce (€)', 'Montant réglé (€)',
   'Terminé', 'Dossier photos', 'Créé le', 'Modifié le'];
 var COL = {};
 COLUMNS.forEach(function (name, i) { COL[name] = i; });
@@ -142,7 +145,9 @@ function saveIntervention(data) {
     row[COL.marque] = field('marque', clean_);
     row[COL.panne] = field('panne', clean_);
     row[COL.dateDiagnostic] = field('dateDiagnostic', parseDate_);
+    row[COL.tempsDiagnostic] = field('tempsDiagnostic', parseMinutes_);
     row[COL.dateIntervention] = field('dateIntervention', parseDate_);
+    row[COL.tempsReparation] = field('tempsReparation', parseMinutes_);
     row[COL.piece] = field('piece', clean_);
     row[COL.montantPiece] = field('montantPiece', parseAmount_);
     row[COL.montantRegle] = field('montantRegle', parseAmount_);
@@ -408,23 +413,67 @@ function getSheet_(name) {
 
 var _schemaChecked = false;
 
+// Colonnes ajoutées par des versions successives : insérées à leur place si elles manquent.
+var COLONNES_AJOUTEES = {
+  'Marque': { width: 130 },
+  'Temps diagnostic (min)': { width: 110, format: '0" min"' },
+  'Temps réparation (min)': { width: 110, format: '0" min"' }
+};
+
 /**
  * Met la feuille « Interventions » à jour automatiquement quand le code ajoute des colonnes :
- * ajout de la colonne « Marque » après « Type d'appareil » (les données et la formule
- * de marge se décalent toutes seules), puis titres de colonnes à jour.
+ * chaque colonne manquante est insérée à sa place (les données, la formule de marge, la case
+ * « Terminé » et le récapitulatif se décalent tout seuls), puis les titres sont mis à jour.
+ * Le récapitulatif reçoit les lignes de temps passé si elles manquent.
  */
 function ensureSchema_(sh) {
   if (_schemaChecked) return;
-  var headers = sh.getRange(1, 1, 1, NB_COLS).getValues()[0].map(function (h) { return String(h).trim(); });
-  if (headers[6] === 'Panne / travaux') {
-    sh.insertColumnAfter(6);
-    sh.setColumnWidth(7, 130);
-    headers = sh.getRange(1, 1, 1, NB_COLS).getValues()[0].map(function (h) { return String(h).trim(); });
+  var width = Math.max(sh.getLastColumn(), NB_COLS);
+  var headers = sh.getRange(1, 1, 1, width).getValues()[0].map(function (h) { return String(h).trim(); });
+  var changed = false;
+  for (var i = 0; i < HEADERS.length; i++) {
+    var want = HEADERS[i];
+    if (headers[i] === want) continue;
+    var add = COLONNES_AJOUTEES[want];
+    if (add && headers.indexOf(want) === -1) {
+      sh.insertColumnBefore(i + 1);
+      headers.splice(i, 0, want);
+      sh.setColumnWidth(i + 1, add.width);
+      if (add.format) sh.getRange(2, i + 1, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat(add.format);
+    } else {
+      headers[i] = want; // colonne renommée (ex. « Appareil » → « Type d'appareil »)
+    }
+    changed = true;
   }
-  if (headers.join('|') !== HEADERS.join('|')) {
-    sh.getRange(1, 1, 1, NB_COLS).setValues([HEADERS]);
-  }
+  if (changed) sh.getRange(1, 1, 1, NB_COLS).setValues([HEADERS]);
+  ensureRecap_();
   _schemaChecked = true;
+}
+
+/** Lignes « temps passé » du récapitulatif (ajoutées une seule fois, sous les autres). */
+function ensureRecap_() {
+  var sh = getSpreadsheet_().getSheetByName('Récapitulatif');
+  if (!sh) return;
+  var last = Math.max(sh.getLastRow(), 1);
+  var labels = sh.getRange(1, 1, last, 1).getValues().map(function (r) { return String(r[0]).trim(); });
+  if (labels.indexOf('Temps de diagnostic (h)') !== -1) return;
+  var colDiag = columnLetter_(COL.tempsDiagnostic + 1);
+  var colRep = columnLetter_(COL.tempsReparation + 1);
+  var margeRow = labels.indexOf('Marge (€)') + 1;
+  var r = last + 1;
+  sh.getRange(r, 1, 3, 1).setValues([['Temps de diagnostic (h)'], ['Temps de réparation (h)'], ['Marge par heure (€/h)']]);
+  // Formules sans séparateur d'arguments : valables quelle que soit la langue de la feuille.
+  sh.getRange(r, 2).setFormula('=SUM(Interventions!' + colDiag + '2:' + colDiag + ')/60');
+  sh.getRange(r + 1, 2).setFormula('=SUM(Interventions!' + colRep + '2:' + colRep + ')/60');
+  if (margeRow > 0) sh.getRange(r + 2, 2).setFormula('=IFERROR(B' + margeRow + '/(B' + r + '+B' + (r + 1) + '))');
+  sh.getRange(r, 2, 2, 1).setNumberFormat('0.0" h"');
+  sh.getRange(r + 2, 2).setNumberFormat('#,##0.00" €/h"');
+}
+
+function columnLetter_(n) {
+  var s = '';
+  while (n > 0) { var m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+  return s;
 }
 
 var LISTES_SHEET_NAME = 'Listes';
@@ -545,6 +594,15 @@ function parseDate_(v) {
   var s = clean_(v);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
   return Utilities.parseDate(s + ' 12:00', getTimeZone_(), 'yyyy-MM-dd HH:mm');
+}
+
+/** Durée en minutes (nombre entier ≥ 0) ; vide → cellule vide. */
+function parseMinutes_(v) {
+  var s = clean_(v);
+  if (s === '') return '';
+  var n = Number(s);
+  if (!isFinite(n) || n < 0) throw new Error('Durée invalide : ' + v);
+  return Math.round(n);
 }
 
 /** « 45,90 » ou « 45.90 € » → 45.9 ; vide → cellule vide. */
@@ -679,7 +737,7 @@ function factureFileFromUrl_(url) {
 // Fonctions exposées à l'application (appelées par le chargeur apps-script/Code.gs)
 // ---------------------------------------------------------------------------
 var API = {
-  VERSION: '2026-11-11.3',
+  VERSION: '2026-11-11.4',
   ACTIONS: {
     listInterventions: listInterventions,
     saveIntervention: saveIntervention,

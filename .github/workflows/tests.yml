@@ -14,8 +14,8 @@ jobs:
     env:
       TZ: Europe/Paris
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
       - name: Tests du serveur (chargeur + API)
@@ -23,6 +23,8 @@ jobs:
       - name: Installation de Playwright
         run: |
           npm install --no-audit --no-fund
-          npx playwright install --with-deps chromium
+          # Sans --with-deps : les machines GitHub ont déjà les bibliothèques système
+          # nécessaires, et l'installation des polices Ubuntu échoue parfois (réseau).
+          npx playwright install chromium
       - name: Test de l'interface (navigateur)
         run: node --test tests/web.test.js

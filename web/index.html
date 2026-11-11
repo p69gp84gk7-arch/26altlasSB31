@@ -41,7 +41,11 @@
     .tab { background: transparent; border: 0; color: rgba(255,255,255,.75); padding: 10px 14px; cursor: pointer;
       font-weight: 600; border-bottom: 3px solid transparent; }
     .tab.on { color: #fff; border-bottom-color: #fff; }
-    .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+    .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff;
+      -webkit-appearance: none; appearance: none; color: var(--text);
+      background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
+      background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
+    .field .choice-other { margin-top: 8px; }
     .file-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .file-pick .name { font-size: 14px; color: var(--muted); word-break: break-all; }
     .mini { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
@@ -198,10 +202,15 @@
       <div class="card">
         <h2>Intervention</h2>
         <div class="grid">
-          <div class="field"><label for="dateAppel">Date de l'appel</label><input id="dateAppel" name="dateAppel" type="date"></div>
+          <div class="field"><label for="appareil">Type d'appareil</label>
+            <select id="appareil" class="choice"></select>
+            <input id="appareilAutre" class="choice-other hidden" placeholder="Nouveau type d'appareil"></div>
+          <div class="field"><label for="marque">Marque</label>
+            <select id="marque" class="choice"></select>
+            <input id="marqueAutre" class="choice-other hidden" placeholder="Nouvelle marque"></div>
+          <div class="field"><label for="dateDiagnostic">Date de diagnostic</label><input id="dateDiagnostic" name="dateDiagnostic" type="date"></div>
           <div class="field"><label for="dateIntervention">Date d'intervention</label><input id="dateIntervention" name="dateIntervention" type="date"></div>
-          <div class="field"><label for="appareil">Appareil</label><input id="appareil" name="appareil" placeholder="Ex. lave-linge Bosch"></div>
-          <div class="field"><label for="piece">Pièce utilisée</label><input id="piece" name="piece" placeholder="Ex. pompe de vidange"></div>
+          <div class="field full"><label for="piece">Pièce utilisée</label><input id="piece" name="piece" placeholder="Ex. pompe de vidange"></div>
           <div class="field full"><label for="panne">Panne / travaux</label><textarea id="panne" name="panne"></textarea></div>
         </div>
       </div>
@@ -282,7 +291,9 @@
         <h2>Informations</h2>
         <div class="grid">
           <div class="field"><label for="fDate">Date de la facture *</label><input id="fDate" type="date" required></div>
-          <div class="field"><label for="fFournisseur">Fournisseur</label><input id="fFournisseur" placeholder="Ex. Pièces Express"></div>
+          <div class="field"><label for="fFournisseur">Fournisseur</label>
+            <select id="fFournisseur" class="choice"></select>
+            <input id="fFournisseurAutre" class="choice-other hidden" placeholder="Nouveau fournisseur"></div>
           <div class="field"><label for="fNumero">N° de facture</label><input id="fNumero"></div>
           <div class="field"><label for="fMontant">Montant (€)</label><input id="fMontant" inputmode="decimal" placeholder="0,00"></div>
           <div class="field full"><label for="fPiece">Pièce(s) commandée(s)</label><input id="fPiece"></div>
@@ -327,7 +338,8 @@
     facturesLoaded: false,
     facture: null,      // facture ouverte (null = nouvelle)
     fReturn: 'factures',// vue à afficher après la fiche facture
-    fFile: null         // fichier choisi {name, dataUrl}
+    fFile: null,        // fichier choisi {name, dataUrl}
+    listes: null        // {types, marques, fournisseurs} venant de la feuille
   };
   var VIEWS = ['viewSetup', 'viewList', 'viewForm', 'viewFactures', 'viewFacture'];
   function show(view) {
@@ -336,8 +348,60 @@
     document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('on', t.getAttribute('data-tab') === tab); });
     window.scrollTo(0, 0);
   }
-  var FIELDS = ['nom', 'prenom', 'telephone', 'adresse', 'dateAppel', 'dateIntervention',
-                'appareil', 'piece', 'panne', 'montantPiece', 'montantRegle'];
+  var FIELDS = ['nom', 'prenom', 'telephone', 'adresse', 'dateDiagnostic', 'dateIntervention',
+                'piece', 'panne', 'montantPiece', 'montantRegle'];
+
+  // ------------------------------------------------------------------
+  // Listes déroulantes (type d'appareil, marque, fournisseur) avec « Autre… »
+  // ------------------------------------------------------------------
+  var AUTRE = '__autre__';
+
+  function uniqueSorted(values) {
+    var seen = {}, out = [];
+    values.forEach(function (v) {
+      v = String(v == null ? '' : v).trim();
+      var k = v.toLowerCase();
+      if (v && !seen[k]) { seen[k] = true; out.push(v); }
+    });
+    return out.sort(function (a, b) { return a.localeCompare(b, 'fr', { sensitivity: 'base' }); });
+  }
+
+  /** Choix proposés : onglet « Listes » de la feuille + valeurs déjà enregistrées. */
+  function listes(kind) {
+    var base = (state.listes && state.listes[kind]) || [];
+    var used = kind === 'fournisseurs'
+      ? state.factures.map(function (f) { return f.fournisseur; })
+      : state.items.map(function (it) { return kind === 'types' ? it.appareil : it.marque; });
+    return uniqueSorted(base.concat(used));
+  }
+
+  function fillChoice(id, list, value) {
+    var sel = $(id), other = $(id + 'Autre');
+    var v = String(value == null ? '' : value).trim();
+    var match = list.filter(function (o) { return o.toLowerCase() === v.toLowerCase(); })[0];
+    sel.innerHTML = '<option value="">— Choisir —</option>' +
+      list.map(function (o) { return '<option>' + esc(o) + '</option>'; }).join('') +
+      '<option value="' + AUTRE + '">Autre…</option>';
+    if (!v) sel.value = '';
+    else if (match) sel.value = match;
+    else { sel.value = AUTRE; other.value = v; }
+    toggleOther(id);
+  }
+
+  function toggleOther(id) {
+    var on = $(id).value === AUTRE, other = $(id + 'Autre');
+    other.classList.toggle('hidden', !on);
+    if (!on) other.value = '';
+  }
+
+  function choiceValue(id) {
+    var v = $(id).value;
+    return v === AUTRE ? $(id + 'Autre').value.trim() : v;
+  }
+
+  function loadListes() {
+    return call('getListes').then(function (l) { state.listes = l || null; }).catch(function () { /* listes partielles */ });
+  }
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -403,7 +467,7 @@
       applyLinks(l);
       toast('Appareil connecté');
       showList();
-      return loadList().then(loadFactures);
+      return loadList().then(loadFactures).then(loadListes);
     }).catch(function (e) {
       if (!e.auth) showSetup('Connexion impossible : ' + errMsg(e));
     }).finally(function () { $('btnSetup').disabled = false; });
@@ -484,7 +548,7 @@
       if (state.filter === 'wip' && it.termine) return false;
       if (state.filter === 'done' && !it.termine) return false;
       if (!q) return true;
-      return [it.id, it.nom, it.prenom, it.telephone, it.adresse, it.appareil, it.piece, it.panne]
+      return [it.id, it.nom, it.prenom, it.telephone, it.adresse, it.appareil, it.marque, it.piece, it.panne]
         .join(' ').toLowerCase().indexOf(q) !== -1;
     });
     if (!rows.length) {
@@ -495,8 +559,8 @@
     }
     $('list').innerHTML = rows.map(function (it) {
       var date = it.dateIntervention ? 'Intervention le ' + frDate(it.dateIntervention)
-               : (it.dateAppel ? 'Appel le ' + frDate(it.dateAppel) : '');
-      var meta = [it.appareil, it.piece].filter(Boolean).join(' · ');
+               : (it.dateDiagnostic ? 'Diagnostic le ' + frDate(it.dateDiagnostic) : '');
+      var meta = [[it.appareil, it.marque].filter(Boolean).join(' '), it.piece].filter(Boolean).join(' · ');
       return '<div class="item" data-id="' + esc(it.id) + '">' +
         '<div><div class="who">' + esc((it.nom + ' ' + it.prenom).trim()) + '</div>' +
         '<div class="meta">' + esc(meta || '—') + '</div>' +
@@ -519,12 +583,14 @@
   function openForm(item) {
     state.current = item || null;
     state.photos = [];
-    var f = item || { dateAppel: today() };
+    var f = item || {};
     FIELDS.forEach(function (k) {
       var v = f[k] == null ? '' : f[k];
       if (k === 'montantPiece' || k === 'montantRegle') v = amountToInput(v);
       $(k).value = v;
     });
+    fillChoice('appareil', listes('types'), f.appareil);
+    fillChoice('marque', listes('marques'), f.marque);
     $('termine').checked = !!f.termine;
     $('formTitle').textContent = item ? ((item.nom + ' ' + item.prenom).trim() + ' · ' + item.id) : 'Nouvelle intervention';
     $('btnDelete').classList.toggle('hidden', !item);
@@ -545,6 +611,8 @@
   function formData() {
     var d = { id: state.current ? state.current.id : '' };
     FIELDS.forEach(function (k) { d[k] = $(k).value; });
+    d.appareil = choiceValue('appareil');
+    d.marque = choiceValue('marque');
     d.termine = $('termine').checked;
     return d;
   }
@@ -805,7 +873,7 @@
     var opts = '<option value="">— Aucune (pièce pour le stock) —</option>' +
       state.items.map(function (it) {
         return '<option value="' + esc(it.id) + '">' + esc(it.id + ' · ' + (it.nom + ' ' + it.prenom).trim() +
-          (it.appareil ? ' · ' + it.appareil : '')) + '</option>';
+          ([it.appareil, it.marque].filter(Boolean).length ? ' · ' + [it.appareil, it.marque].filter(Boolean).join(' ') : '')) + '</option>';
       }).join('');
     $('fIntervention').innerHTML = opts;
     $('fIntervention').value = selected || '';
@@ -817,7 +885,7 @@
     state.fFile = null;
     var d = f || Object.assign({ date: today() }, preset || {});
     $('fDate').value = d.date || '';
-    $('fFournisseur').value = d.fournisseur || '';
+    fillChoice('fFournisseur', listes('fournisseurs'), d.fournisseur);
     $('fNumero').value = d.numero || '';
     $('fMontant').value = amountToInput(d.montant);
     $('fPiece').value = d.piece || '';
@@ -862,7 +930,7 @@
     var data = {
       id: state.facture ? state.facture.id : '',
       date: $('fDate').value,
-      fournisseur: $('fFournisseur').value,
+      fournisseur: choiceValue('fFournisseur'),
       numero: $('fNumero').value,
       montant: $('fMontant').value,
       piece: $('fPiece').value,
@@ -990,6 +1058,14 @@
   $('fList').addEventListener('click', onFactureClick);
   $('formFactures').addEventListener('click', onFactureClick);
 
+  // Listes déroulantes : « Autre… » affiche un champ pour saisir une nouvelle valeur
+  ['appareil', 'marque', 'fFournisseur'].forEach(function (id) {
+    $(id).addEventListener('change', function () {
+      toggleOther(id);
+      if ($(id).value === AUTRE) $(id + 'Autre').focus();
+    });
+  });
+
   // Connexion
   $('lnkSetup').addEventListener('click', function (e) { e.preventDefault(); showSetup(); });
   $('btnSetup').addEventListener('click', function () {
@@ -1019,7 +1095,7 @@
     if (connectFromHash()) return;
     if (!getCfg()) { showSetup(); return; }
     show('viewList');
-    loadList().then(loadFactures);
+    loadList().then(loadFactures).then(loadListes);
     call('getLinks').then(applyLinks).catch(function () {});
   })();
 </script>

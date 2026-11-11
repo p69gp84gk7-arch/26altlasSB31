@@ -31,12 +31,12 @@ test('chargeur : copie de secours si GitHub est indisponible', () => {
 
 test('interventions : création, numérotation, montants, téléphone en texte, mise à jour, suppression', () => {
   const { api, rows } = makeEnv();
-  let r1 = api('saveIntervention', { nom: 'Dupont', prenom: 'Marie', telephone: '0612345678', dateAppel: '2026-11-10',
+  let r1 = api('saveIntervention', { nom: 'Dupont', prenom: 'Marie', telephone: '0612345678', dateDiagnostic: '2026-11-10',
     dateIntervention: '2026-11-12', piece: 'Pompe', montantPiece: '45,90', montantRegle: '120', termine: false });
   assert.equal(r1.id, 'INT-0001');
   assert.equal(r1.telephone, '0612345678');
   assert.equal(r1.montantPiece, 45.9);
-  assert.equal(r1.dateAppel, '2026-11-10');
+  assert.equal(r1.dateDiagnostic, '2026-11-10');
   assert.equal(r1.dateIntervention, '2026-11-12');
   const r2 = api('saveIntervention', { nom: 'Martin', prenom: 'Paul' });
   assert.equal(r2.id, 'INT-0002');
@@ -59,7 +59,7 @@ test('photos : dossier créé au premier envoi, renommé avec le client, suppres
   assert.deepEqual(api('listPhotos', r1.id), { folderUrl: '', photos: [] });
   const ph = api('uploadPhoto', r1.id, 'a.jpg', jpg);
   assert.equal(api('listPhotos', r1.id).photos.length, 1);
-  assert.match(rows[1][13], /folders\//);
+  assert.match(rows[1][14], /folders\//);
   assert.equal(api('getPhotoData', ph.id), jpg);
   api('saveIntervention', Object.assign({}, r1, { nom: 'Durand' }));
   const folder = Object.values(items).find(x => x._kind === 'folder' && x._parent === photosRoot);
@@ -130,4 +130,56 @@ test('chargeur : lien de connexion envoyé par e-mail (utilisable depuis un tél
   env.ctx.changerCle();
   assert.equal(env.mails.length, 2);
   assert.equal(env.post('listInterventions', [], params.get('cle')).code, 'AUTH');
+});
+
+test('feuille : colonne Marque ajoutée automatiquement, données existantes décalées, titres à jour', () => {
+  const { api, rows, ctx } = makeEnv();
+  // Ligne écrite par l'ancienne version (sans Marque, « Date de l'appel » en H)
+  const d = new ctx.Date(2026, 10, 10, 12);
+  rows.push(['INT-0001', 'Dupont', 'Marie', '0612345678', '', 'Lave-linge Bosch', 'Fuite', d, '', 'Pompe', 45.9, 120, true, '', d, d]);
+  const list = api('listInterventions');
+  assert.equal(rows[0][5], "Type d'appareil");
+  assert.equal(rows[0][6], 'Marque');
+  assert.equal(rows[0][8], 'Date de diagnostic');
+  assert.equal(rows[0][17], 'Marge (€)', 'la colonne de marge se décale en R');
+  assert.equal(list[0].appareil, 'Lave-linge Bosch');
+  assert.equal(list[0].marque, '');
+  assert.equal(list[0].panne, 'Fuite');
+  assert.equal(list[0].dateDiagnostic, '2026-11-10');
+  assert.equal(list[0].montantPiece, 45.9);
+  assert.equal(list[0].termine, true);
+  // Une seule insertion, même après plusieurs appels
+  api('listInterventions');
+  assert.equal(rows[0].filter(h => h === 'Marque').length, 1);
+});
+
+test('interventions : un champ absent (ancienne application) garde sa valeur', () => {
+  const { api } = makeEnv();
+  const r = api('saveIntervention', { nom: 'Dupont', appareil: 'Four', marque: 'Bosch', dateDiagnostic: '2026-11-10', montantPiece: '20' });
+  const r2 = api('saveIntervention', { id: r.id, nom: 'Dupont', dateAppel: '2026-11-12' });
+  assert.equal(r2.marque, 'Bosch');
+  assert.equal(r2.appareil, 'Four');
+  assert.equal(r2.montantPiece, 20);
+  assert.equal(r2.dateDiagnostic, '2026-11-12', 'dateAppel (ancien nom) est accepté');
+});
+
+test('listes déroulantes : onglet Listes créé, valeurs enregistrées ajoutées, sans doublon, triées', () => {
+  const { api, extraSheets } = makeEnv();
+  api('saveIntervention', { nom: 'A', appareil: 'Robot pâtissier', marque: 'KitchenAid' });
+  api('saveIntervention', { nom: 'B', appareil: 'four', marque: 'bosch' });
+  api('saveFacture', { date: '2026-11-12', fournisseur: 'Pièces Express' }, { name: 'a.pdf', dataUrl: pdf });
+  api('saveFacture', { date: '2026-11-12', fournisseur: 'Agora Pièces' }, { name: 'b.pdf', dataUrl: pdf });
+  api('saveFacture', { date: '2026-11-12', fournisseur: 'pièces express' }, { name: 'c.pdf', dataUrl: pdf });
+  const l = api('getListes');
+  assert.ok(extraSheets.Listes, 'onglet Listes créé');
+  assert.equal(extraSheets.Listes._rows[0][0], "Types d'appareil");
+  assert.ok(l.types.includes('Lave-linge') && l.types.includes('Robot pâtissier'));
+  assert.equal(l.types.filter(t => t.toLowerCase() === 'four').length, 1);
+  assert.ok(l.marques.includes('KitchenAid') && l.marques.includes('Whirlpool'));
+  assert.equal(l.marques.filter(m => m.toLowerCase() === 'bosch').length, 1);
+  assert.deepEqual(l.fournisseurs, ['Agora Pièces', 'Pièces Express']);
+  assert.deepEqual(l.marques, [...l.marques].sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' })));
+  // Valeur ajoutée à la main dans l'onglet Listes
+  extraSheets.Listes._rows.push(['', '', 'Fournisseur Manuel']);
+  assert.ok(api('getListes').fournisseurs.includes('Fournisseur Manuel'));
 });

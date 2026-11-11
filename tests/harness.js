@@ -89,6 +89,7 @@ function makeEnv(options = {}) {
   const cacheStore = {};
   const props = { API_KEY };
   const fetches = [];
+  const mails = [];
   const ctx = {
     console,
     SpreadsheetApp: { openById: () => ss, flush: () => {}, getUi: () => { throw new Error('pas d\'interface'); } },
@@ -97,7 +98,9 @@ function makeEnv(options = {}) {
       getFileById: id => { if (!items[id]) throw new Error('introuvable'); return items[id]; },
     },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    Session: { getScriptTimeZone: () => 'Europe/Paris' },
+    Session: { getScriptTimeZone: () => 'Europe/Paris', getEffectiveUser: () => ({ getEmail: () => 'moi@example.com' }) },
+    MailApp: { sendEmail: (msg) => { mails.push(msg); } },
+    Logger: { log: () => {} },
     CacheService: { getScriptCache: () => ({ get: k => cacheStore[k] || null, put: (k, v) => { cacheStore[k] = v; } }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => props[k] || null, setProperty: (k, v) => { props[k] = v; } }) },
     UrlFetchApp: {
@@ -130,7 +133,8 @@ function makeEnv(options = {}) {
       },
       getUuid: () => require('crypto').randomUUID(),
     },
-    HtmlService: {}, ScriptApp: {},
+    HtmlService: {},
+    ScriptApp: { getService: () => ({ getUrl: () => options.deployedUrl || null }) },
   };
   vm.createContext(ctx);
   ctx.Date = vm.runInContext('Date', ctx);
@@ -148,7 +152,7 @@ function makeEnv(options = {}) {
     return res.data;
   }
 
-  return { ctx, post, api, items, rows: sheet._rows, frows: fsheet._rows, photosRoot, facturesRoot, props, fetches, cacheStore };
+  return { ctx, post, api, mails, items, rows: sheet._rows, frows: fsheet._rows, photosRoot, facturesRoot, props, fetches, cacheStore };
 }
 
 module.exports = { makeEnv, API_KEY };

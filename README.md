@@ -49,11 +49,15 @@ Puis fusionner la pull request dans `main`. Le site est publié automatiquement 
 
 ### 3. Connecter vos appareils
 
-1. Recharger la feuille Google Sheets : un menu **Dépannages** apparaît.
-2. **Dépannages › Lien de connexion** : coller l'URL `/exec` › **Enregistrer l'adresse**.
-3. **Copier le lien** affiché et l'ouvrir **une fois** sur chaque téléphone / ordinateur (envoyez-le-vous par e-mail ou SMS). L'appareil reste connecté.
-4. Sur téléphone, l'ajouter à l'écran d'accueil : **Partager › Sur l'écran d'accueil** (iPhone) ou **⋮ › Ajouter à l'écran d'accueil** (Android).
-   Sur iPhone, l'icône de l'écran d'accueil a sa propre mémoire : si elle demande la connexion, collez le lien dans le champ prévu (icône ⚙︎ en haut).
+**Depuis un téléphone ou un ordinateur** (éditeur Apps Script) :
+1. Facultatif : coller l'URL `/exec` entre les guillemets de `var ADRESSE_API = '';` en haut de `Code.gs`, puis enregistrer.
+2. Dans la liste des fonctions en haut de l'éditeur, choisir **`envoyerLienParEmail`** › **▶ Exécuter** (accepter l'autorisation d'envoi d'e-mail la première fois).
+3. Le **lien de connexion** arrive dans votre Gmail (il est aussi affiché dans le journal d'exécution).
+
+**Ou, sur ordinateur uniquement** : recharger la feuille › menu **Dépannages › Lien de connexion** › coller l'URL `/exec` › **Enregistrer l'adresse** › **Copier le lien**. (Les menus personnalisés n'existent pas dans l'application Google Sheets pour téléphone.)
+
+Ouvrir ce lien **une fois** sur chaque téléphone / ordinateur : l'appareil reste connecté.
+Sur iPhone : appui long sur le lien › **Ouvrir dans Safari**, puis **Partager › Sur l'écran d'accueil**. Si l'icône de l'écran d'accueil demande la connexion, toucher ⚙︎ et coller le lien.
 
 ## Faire évoluer l'application
 
@@ -67,7 +71,7 @@ Puis fusionner la pull request dans `main`. Le site est publié automatiquement 
 
 - Le site GitHub Pages est public mais **ne contient aucune donnée** : sans la clé, il affiche seulement l'écran de connexion.
 - La clé secrète est enregistrée dans Apps Script et sur vos appareils ; le lien de connexion la contient, **ne le partagez pas**.
-- Téléphone perdu : **Dépannages › Changer la clé**, puis rouvrir le nouveau lien sur vos appareils.
+- Téléphone perdu : exécuter la fonction **`changerCle`** dans l'éditeur (ou menu **Dépannages › Changer la clé**) ; le nouveau lien est envoyé par e-mail.
 - Le code exécuté par Google vient de la branche `main` du dépôt : seules les personnes autorisées à fusionner sur ce dépôt peuvent le modifier. Le dépôt doit rester **public** (sinon Google ne peut plus lire `backend/api.js`).
 
 ## Données enregistrées
@@ -92,7 +96,8 @@ Dépannages électroménager/
 
 | Problème | Solution |
 |---|---|
-| L'application demande la connexion | Rouvrir le lien de connexion (menu Dépannages › Lien de connexion). |
+| L'application demande la connexion | Rouvrir le lien de connexion (fonction `envoyerLienParEmail`). |
+| « Cannot call SpreadsheetApp.getUi() from this context » | Normal depuis l'éditeur ou un téléphone : utiliser la fonction `envoyerLienParEmail`. |
 | « Clé de connexion invalide » | La clé a été changée : rouvrir le nouveau lien. |
 | « Pas de connexion au serveur » | Vérifier le réseau ; vérifier que le déploiement Apps Script est bien en accès **Tout le monde**. |
 | « Impossible de télécharger le code depuis GitHub » | Le dépôt est privé ou `backend/api.js` n'est pas dans `main`. |

@@ -100,6 +100,43 @@ test('connexion, interventions, photos et factures depuis le site GitHub Pages',
     await page.waitForSelector('#viewForm:not(.hidden) #formFactures .item');
     assert.match(await page.textContent('#formFactures .total'), /45,90/);
 
+    // Documentation : capture ajoutée depuis la fiche, rangée par appareil (référence)
+    assert.match(await page.textContent('#formDocs'), /Aucun document/);
+    await page.click('#btnFormAddDoc');
+    await page.waitForSelector('#viewDoc:not(.hidden)');
+    assert.equal(await page.inputValue('#dReference'), 'WAT28420FF/01');
+    assert.equal(await page.inputValue('#dMarque'), 'Marque Inconnue');
+    await page.selectOption('#dCategorie', 'Vue éclatée');
+    await page.fill('#dTitre', 'Tambour');
+    const [docChooser] = await Promise.all([page.waitForEvent('filechooser'), page.tap('#btnPickDoc')]);
+    await docChooser.setFiles(fixture('fixture-photo.jpg'));
+    await page.waitForSelector('#dPreview img');
+    await page.click('#btnDSave');
+    await page.waitForSelector('#viewForm:not(.hidden) #formDocs .doc-tile img');
+    const docRow = env.extraSheets.Documentation._rows[1];
+    assert.deepEqual(docRow.slice(0, 6), ['DOC-0001', 'WAT28420FF/01', 'Marque Inconnue', 'Lave-linge', 'Vue éclatée', 'Tambour']);
+    const docFile = Object.values(env.items).find(x => x._kind === 'file' && x._name.startsWith('Vue éclatée - Tambour'));
+    assert.equal(docFile._parent.getName(), 'Marque Inconnue WAT28420FF-01');
+    assert.equal(docFile._bytes.length, fs.statSync(fixture('fixture-photo.jpg')).size, 'capture envoyée sans recompression');
+
+    // Fiche appareil : documents + interventions ; ajout d'un schéma en PDF
+    await page.click('#btnFormMachine');
+    await page.waitForSelector('#viewMachine:not(.hidden)');
+    assert.equal(await page.textContent('#mTitle'), 'Marque Inconnue WAT28420FF/01');
+    assert.equal(await page.locator('#mInterventions .item').count(), 1);
+    await page.click('#btnMAddDoc');
+    await page.selectOption('#dCategorie', 'Schéma électrique');
+    const [pdfDocChooser] = await Promise.all([page.waitForEvent('filechooser'), page.tap('#btnPickDoc')]);
+    await pdfDocChooser.setFiles(fixture('fixture-facture.pdf'));
+    await page.waitForFunction(() => document.getElementById('dFileName').textContent === 'fixture-facture.pdf');
+    await page.click('#btnDSave');
+    await page.waitForSelector('#viewMachine:not(.hidden)');
+    await page.waitForFunction(() => document.querySelectorAll('#mDocs .doc-tile').length === 2);
+    assert.match(await page.textContent('#mDocs'), /PDF/);
+    await page.click('#btnMBack');
+    await page.waitForSelector('#viewForm:not(.hidden)');
+    assert.equal(await page.locator('#formDocs .doc-tile').count(), 2);
+
     // Terminer, revenir à la liste
     await page.check('#termine');
     await page.click('#btnSave');
@@ -112,6 +149,22 @@ test('connexion, interventions, photos et factures depuis le site GitHub Pages',
     await page.click('[data-tab=factures]');
     await page.waitForSelector('#fList .item');
     assert.equal(await page.locator('#fList .item').count(), 1);
+
+    // Onglet Documentation : l'appareil et ses 2 documents
+    await page.click('[data-tab=docs]');
+    await page.waitForSelector('#dList .item');
+    assert.equal(await page.locator('#dList .item').count(), 1);
+    assert.match(await page.textContent('#dList'), /2 documents · 1 intervention/);
+    await page.click('#dList .item');
+    await page.waitForSelector('#viewMachine:not(.hidden)');
+    await page.click('#mDocs .doc-tile >> nth=1');
+    await page.waitForSelector('#viewDoc:not(.hidden)');
+    await page.fill('#dTitre', 'Carte de puissance');
+    await page.click('#btnDSave');
+    await page.waitForSelector('#viewMachine:not(.hidden)');
+    assert.match(await page.textContent('#mDocs'), /Carte de puissance/);
+    await page.click('#btnMBack');
+    await page.click('[data-tab=factures]');
 
     // Nouvelle facture : le fournisseur déjà enregistré est proposé dans la liste
     await page.click('#btnNewFacture');

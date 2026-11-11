@@ -11,7 +11,9 @@
  *  - les photos sont rangées dans Google Drive, un sous-dossier par intervention,
  *    à l'intérieur du dossier « Photos interventions » ;
  *  - les factures des pièces commandées sont archivées dans le dossier Drive
- *    « Factures pièces » (un sous-dossier par année) et listées dans l'onglet « Factures ».
+ *    « Factures pièces » (un sous-dossier par année) et listées dans l'onglet « Factures » ;
+ *  - la documentation technique (captures, photos, PDF) est rangée par appareil dans le
+ *    dossier Drive « Documentation technique » et listée dans l'onglet « Documentation ».
  *
  * Les fonctions appelables par l'application sont listées dans API.ACTIONS (en bas du fichier).
  */
@@ -24,6 +26,9 @@ var CONFIG = {
   SPREADSHEET_ID: '1n6WC_Ik14bE6ZwapDIAAXgPPw8xaqzCUeX0QENBxons',
   PHOTOS_FOLDER_ID: '1jgvigMTAK_tkB3WVTiqkmEa93CGMLKQh',
   FACTURES_FOLDER_ID: '1X2txYHkLIRCRfKAw1SOZR3qR1Egu69X8',
+  DOCS_FOLDER_ID: '1c4z_x9nx9SSiQqPRckfbk4_eWaDmsB30',
+  DOCS_SHEET_NAME: 'Documentation',
+  DOC_PREFIX: 'DOC-',
   SHEET_NAME: 'Interventions',
   FACTURES_SHEET_NAME: 'Factures',
   ID_PREFIX: 'INT-',
@@ -79,6 +84,24 @@ var FAC_COLUMNS = [
 var FCOL = {};
 FAC_COLUMNS.forEach(function (name, i) { FCOL[name] = i; });
 var NB_FAC_COLS = FAC_COLUMNS.length;
+
+// Ordre des colonnes A → I de l'onglet « Documentation » (une ligne par document).
+var DOC_COLUMNS = [
+  'id',          // A  ID (DOC-0001)
+  'reference',   // B  Référence de l'appareil (texte) : identifie l'appareil
+  'marque',      // C  Marque
+  'appareil',    // D  Type d'appareil
+  'categorie',   // E  Catégorie (Vue éclatée, Schéma électrique…)
+  'titre',       // F  Titre / description
+  'fichier',     // G  Fichier (lien Drive)
+  'format',      // H  « image » ou « pdf »
+  'ajouteLe'     // I  Ajouté le
+];
+var DOC_HEADERS = ['ID', 'Référence', 'Marque', "Type d'appareil", 'Catégorie', 'Titre', 'Fichier', 'Format', 'Ajouté le'];
+var DCOL = {};
+DOC_COLUMNS.forEach(function (name, i) { DCOL[name] = i; });
+var NB_DOC_COLS = DOC_COLUMNS.length;
+var DOC_CATEGORIES = ['Vue éclatée', 'Schéma électrique', 'Manuel de service', 'Codes erreur', 'Notice', 'Autre'];
 
 // ---------------------------------------------------------------------------
 // Fonctions appelées par l'application
@@ -268,6 +291,10 @@ function getListes() {
     out.marques.push(it.marque);
   });
   listFactures().reverse().forEach(function (f) { out.fournisseurs.push(f.fournisseur); });
+  listDocs().forEach(function (d) {
+    out.types.push(d.appareil);
+    out.marques.push(d.marque);
+  });
   return { types: uniqueSorted_(out.types), marques: uniqueSorted_(out.marques), fournisseurs: uniqueSorted_(out.fournisseurs) };
 }
 
@@ -276,7 +303,8 @@ function getLinks() {
   return {
     sheetUrl: SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getUrl(),
     photosUrl: DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID).getUrl(),
-    facturesUrl: DriveApp.getFolderById(CONFIG.FACTURES_FOLDER_ID).getUrl()
+    facturesUrl: DriveApp.getFolderById(CONFIG.FACTURES_FOLDER_ID).getUrl(),
+    docsUrl: DriveApp.getFolderById(CONFIG.DOCS_FOLDER_ID).getUrl()
   };
 }
 
@@ -396,6 +424,127 @@ function deleteFacture(id) {
   } finally {
     lock.releaseLock();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Documentation technique (par appareil = par référence)
+// ---------------------------------------------------------------------------
+
+/** Tous les documents, triés par marque, référence puis catégorie. */
+function listDocs() {
+  var sh = getDocsSheet_();
+  var last = lastDataRow_(sh);
+  if (last < 2) return [];
+  var tz = getTimeZone_();
+  var out = [];
+  sh.getRange(2, 1, last - 1, NB_DOC_COLS).getValues().forEach(function (row) {
+    if (String(row[DCOL.id]).trim() === '') return;
+    var rec = rowToObject_(DOC_COLUMNS, row, tz);
+    rec.id = String(rec.id);
+    rec.reference = String(rec.reference);
+    out.push(rec);
+  });
+  out.sort(function (a, b) {
+    return String(a.marque).localeCompare(String(b.marque), 'fr') ||
+      String(a.reference).localeCompare(String(b.reference), 'fr') ||
+      DOC_CATEGORIES.indexOf(a.categorie) - DOC_CATEGORIES.indexOf(b.categorie) ||
+      String(a.id).localeCompare(String(b.id));
+  });
+  return out;
+}
+
+/**
+ * Ajoute un document (capture, photo ou PDF) à un appareil, ou modifie ses informations.
+ * Le fichier est rangé dans « Documentation technique/<Marque> <Référence> » et nommé
+ * « Catégorie - Titre - DOC-xxxx ». Si la marque ou la référence changent, il est déplacé.
+ * @param {Object} data {id?, reference, marque, appareil, categorie, titre}
+ * @param {Object=} file {name, dataUrl} obligatoire pour un nouveau document
+ */
+function saveDoc(data, file) {
+  data = data || {};
+  var reference = clean_(data.reference);
+  if (!reference) throw new Error("La référence de l'appareil est obligatoire.");
+  var categorie = DOC_CATEGORIES.indexOf(clean_(data.categorie)) >= 0 ? clean_(data.categorie) : 'Autre';
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = getDocsSheet_();
+    var tz = getTimeZone_();
+    var rowIndex = data.id ? findRow_(sh, data.id) : -1;
+    if (data.id && rowIndex < 0) throw new Error('Document introuvable : ' + data.id);
+    var existing = rowIndex > 0 ? sh.getRange(rowIndex, 1, 1, NB_DOC_COLS).getValues()[0] : null;
+    if (!existing) {
+      if (!file || !file.dataUrl) throw new Error('Ajoutez le fichier (capture, photo ou PDF).');
+      rowIndex = lastDataRow_(sh) + 1;
+    }
+    var row = new Array(NB_DOC_COLS);
+    row[DCOL.id] = existing ? existing[DCOL.id] : nextId_(sh, CONFIG.DOC_PREFIX);
+    row[DCOL.reference] = reference;
+    row[DCOL.marque] = clean_(data.marque);
+    row[DCOL.appareil] = clean_(data.appareil);
+    row[DCOL.categorie] = categorie;
+    row[DCOL.titre] = clean_(data.titre);
+    row[DCOL.fichier] = existing ? existing[DCOL.fichier] : '';
+    row[DCOL.format] = existing ? existing[DCOL.format] : '';
+    row[DCOL.ajouteLe] = existing ? existing[DCOL.ajouteLe] : new Date();
+
+    var folder = machineFolder_(row[DCOL.marque], reference);
+    var baseName = [categorie, row[DCOL.titre], row[DCOL.id]].filter(function (x) { return String(x).trim() !== ''; })
+      .join(' - ').replace(/[\\/:*?"<>|]/g, '-');
+    if (existing) {
+      var f = docFileFromUrl_(row[DCOL.fichier]);
+      if (f) {
+        var name = baseName + extension_(f.getName(), f.getMimeType());
+        if (f.getName() !== name) f.setName(name);
+        var inFolder = false, parents = f.getParents();
+        while (parents.hasNext()) { if (parents.next().getId() === folder.getId()) inFolder = true; }
+        if (!inFolder) f.moveTo(folder);
+      }
+    } else {
+      var blob = dataUrlToBlob_(file.dataUrl, baseName);
+      var mime = blob.getContentType();
+      if (mime !== 'application/pdf' && mime.indexOf('image/') !== 0) {
+        throw new Error('Format non accepté : PDF ou image uniquement.');
+      }
+      blob.setName(baseName + extension_(file.name, mime));
+      row[DCOL.fichier] = folder.createFile(blob).getUrl();
+      row[DCOL.format] = mime === 'application/pdf' ? 'pdf' : 'image';
+    }
+    sh.getRange(rowIndex, DCOL.reference + 1).setNumberFormat('@');
+    sh.getRange(rowIndex, 1, 1, NB_DOC_COLS).setValues([row]);
+    SpreadsheetApp.flush();
+    var rec = rowToObject_(DOC_COLUMNS, row, tz);
+    rec.id = String(rec.id);
+    rec.reference = String(rec.reference);
+    return rec;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Supprime un document : la ligne est retirée, le fichier part à la corbeille Drive (30 jours). */
+function deleteDoc(id) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = getDocsSheet_();
+    var rowIndex = findRow_(sh, id);
+    if (rowIndex < 0) throw new Error('Document introuvable : ' + id);
+    var f = docFileFromUrl_(sh.getRange(rowIndex, DCOL.fichier + 1).getValue());
+    if (f) f.setTrashed(true);
+    sh.deleteRow(rowIndex);
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Contenu d'une image de documentation (data URL) pour l'afficher dans l'application. */
+function getDocData(fileId) {
+  var f = DriveApp.getFileById(fileId);
+  if (!isUnder_(f, CONFIG.DOCS_FOLDER_ID)) throw new Error("Ce fichier n'appartient pas à la documentation.");
+  var blob = f.getBlob();
+  return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
 }
 
 // ---------------------------------------------------------------------------
@@ -660,6 +809,57 @@ function getInterventionFolder_(id, create) {
   }
 }
 
+/** Onglet « Documentation » (créé s'il n'existe pas). */
+function getDocsSheet_() {
+  var ss = getSpreadsheet_();
+  var sh = ss.getSheetByName(CONFIG.DOCS_SHEET_NAME);
+  if (sh) return sh;
+  sh = ss.insertSheet(CONFIG.DOCS_SHEET_NAME);
+  sh.getRange(1, 1, 1, NB_DOC_COLS).setValues([DOC_HEADERS]);
+  sh.getRange(1, 1, 1, NB_DOC_COLS).setFontWeight('bold').setBackground('#1f3864').setFontColor('#ffffff');
+  sh.setFrozenRows(1);
+  sh.setColumnWidths(1, NB_DOC_COLS, 150);
+  sh.getRange(2, DCOL.reference + 1, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+  return sh;
+}
+
+/** Dossier de l'appareil « <Marque> <Référence> » dans « Documentation technique » (créé si besoin). */
+function machineFolder_(marque, reference) {
+  var name = [marque, reference].map(clean_).filter(Boolean).join(' ').replace(/[\\/:*?"<>|]/g, '-');
+  var root = DriveApp.getFolderById(CONFIG.DOCS_FOLDER_ID);
+  var it = root.getFoldersByName(name);
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!f.isTrashed()) return f;
+  }
+  return root.createFolder(name);
+}
+
+/** Vrai si le fichier est dans le dossier rootId ou dans un de ses sous-dossiers directs. */
+function isUnder_(file, rootId) {
+  var parents = file.getParents();
+  while (parents.hasNext()) {
+    var p = parents.next();
+    if (p.getId() === rootId) return true;
+    var gp = p.getParents();
+    while (gp.hasNext()) {
+      if (gp.next().getId() === rootId) return true;
+    }
+  }
+  return false;
+}
+
+function docFileFromUrl_(url) {
+  var m = /\/d\/([\w-]+)/.exec(String(url || ''));
+  if (!m) return null;
+  try {
+    var f = DriveApp.getFileById(m[1]);
+    return !f.isTrashed() && isUnder_(f, CONFIG.DOCS_FOLDER_ID) ? f : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 /** Vérifie que le fichier est bien une photo rangée dans « Photos interventions ». */
 function checkPhoto_(fileId) {
   var f = DriveApp.getFileById(fileId);
@@ -742,7 +942,7 @@ function factureFileFromUrl_(url) {
 // Fonctions exposées à l'application (appelées par le chargeur apps-script/Code.gs)
 // ---------------------------------------------------------------------------
 var API = {
-  VERSION: '2026-11-11.5',
+  VERSION: '2026-11-11.6',
   ACTIONS: {
     listInterventions: listInterventions,
     saveIntervention: saveIntervention,
@@ -755,6 +955,10 @@ var API = {
     saveFacture: saveFacture,
     deleteFacture: deleteFacture,
     getLinks: getLinks,
-    getListes: getListes
+    getListes: getListes,
+    listDocs: listDocs,
+    saveDoc: saveDoc,
+    deleteDoc: deleteDoc,
+    getDocData: getDocData
   }
 };

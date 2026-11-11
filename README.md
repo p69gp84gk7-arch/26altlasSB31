@@ -85,7 +85,9 @@ Fichiers rangés dans `Factures pièces/<année>/` et nommés `date_fournisseur_
 
 **Onglet Récapitulatif** : interventions terminées / en cours, total pièces, total réglé, marge, total des factures archivées, heures de diagnostic, heures de réparation, marge par heure.
 
-**Documentation technique** : dès que la référence de l'appareil est saisie, la fiche propose des recherches préparées avec la marque et la référence : vue éclatée, manuel de service (PDF), pièces détachées (Spareka, SOS Accessoire), ManualsLib, Elektrotanya, iFixit, codes erreur. Il n'existe pas de base libre de vues éclatées : ces documents appartiennent aux fabricants. Dans l'UE, les réparateurs professionnels peuvent s'inscrire sur l'espace pro de chaque fabricant pour obtenir les vues éclatées officielles (règlements écoconception 2019/2023, 2019/2022, 2019/2019).
+**Documentation technique** (onglet *Documentation* de l'application) : une bibliothèque par appareil, un appareil étant identifié par sa **référence**. Pour chaque appareil : ses documents (captures d'écran de PDF, photos, PDF) classés par catégorie (vue éclatée, schéma électrique, manuel de service, codes erreur, notice, autre), les interventions déjà faites sur ce modèle et des recherches en ligne préparées (vue éclatée, manuel de service, pièces détachées, ManualsLib, Elektrotanya, iFixit, codes erreur). Dans une fiche d'intervention, la carte *Documentation technique* affiche directement les documents de l'appareil et permet d'en ajouter. Les captures sont envoyées sans recompression (jusqu'à 4 Mo) pour rester lisibles.
+Fichiers rangés dans Drive : `Documentation technique/<Marque> <Référence>/`, nommés `Catégorie - Titre - DOC-0001`. Onglet **Documentation** de la feuille : ID, référence, marque, type, catégorie, titre, lien du fichier, format, date d'ajout.
+Il n'existe pas de base libre de vues éclatées : dans l'UE, les réparateurs professionnels peuvent s'inscrire sur l'espace pro de chaque fabricant pour obtenir les vues éclatées officielles (règlements écoconception 2019/2023, 2019/2022, 2019/2019).
 
 **Temps passés** : dans la fiche, deux listes (de 5 en 5 min jusqu'à 1 h, puis de 15 en 15 min jusqu'à 10 h). La fiche affiche le temps total et la marge par heure. Dans la feuille, les temps sont en minutes.
 
@@ -95,7 +97,8 @@ Dans Google Drive, tout est dans le dossier **Dépannages électroménager** :
 Dépannages électroménager/
 ├── Fichier clients dépannages        (feuille)
 ├── Photos interventions/INT-0001 - Nom Prénom/…
-└── Factures pièces/2026/…
+├── Factures pièces/2026/…
+└── Documentation technique/Bosch WAT28420FF-01/…
 ```
 
 ## En cas de problème

@@ -253,3 +253,49 @@ test('feuille : depuis la version avec les temps (état réel), seule la colonne
   assert.equal(r.reference, '0123456789');
   assert.equal(rows[1][7], '0123456789');
 });
+
+test('documentation : documents rangés par appareil, catégories, déplacement, suppression', () => {
+  const { api, items, docsRoot, photosRoot, extraSheets } = makeEnv();
+  const png = 'data:image/png;base64,' + Buffer.from('png').toString('base64');
+  assert.throws(() => api('saveDoc', { marque: 'Bosch' }, { name: 'a.png', dataUrl: png }), /référence/);
+  assert.throws(() => api('saveDoc', { reference: 'WAT28420FF/01' }), /fichier/);
+  assert.throws(() => api('saveDoc', { reference: 'X1' }, { name: 'a.txt', dataUrl: 'data:text/plain;base64,eHg=' }), /PDF ou image/);
+
+  const d1 = api('saveDoc', { reference: 'WAT28420FF/01', marque: 'Bosch', appareil: 'Lave-linge',
+    categorie: 'Vue éclatée', titre: 'Tambour' }, { name: 'Capture.PNG', dataUrl: png });
+  assert.equal(d1.id, 'DOC-0001');
+  assert.equal(d1.format, 'image');
+  assert.ok(extraSheets.Documentation, 'onglet Documentation créé');
+  assert.equal(extraSheets.Documentation._rows[0][1], 'Référence');
+  const f1 = Object.values(items).find(x => x._kind === 'file' && x._name.includes('DOC-0001'));
+  assert.equal(f1._name, 'Vue éclatée - Tambour - DOC-0001.png');
+  assert.equal(f1._parent.getName(), 'Bosch WAT28420FF-01');
+  assert.equal(f1._parent._parent, docsRoot);
+
+  const d2 = api('saveDoc', { reference: 'WAT28420FF/01', marque: 'Bosch', categorie: 'Schéma électrique' },
+    { name: 'schema.pdf', dataUrl: pdf });
+  assert.equal(d2.format, 'pdf');
+  const f2 = Object.values(items).find(x => x._kind === 'file' && x._name.includes('DOC-0002'));
+  assert.equal(f2._parent, f1._parent, 'même appareil : même dossier');
+  assert.equal(api('saveDoc', { reference: '0123', categorie: 'Inconnue' }, { name: 'x.pdf', dataUrl: pdf }).categorie, 'Autre');
+
+  const list = api('listDocs');
+  assert.deepEqual(list.map(d => d.id), ['DOC-0003', 'DOC-0001', 'DOC-0002']);
+  assert.equal(list[0].reference, '0123', 'référence en chiffres gardée en texte');
+
+  // Correction de la marque et du titre : fichier renommé et déplacé
+  api('saveDoc', Object.assign({}, d1, { marque: 'Siemens', titre: 'Tambour et cuve' }));
+  assert.equal(f1._name, 'Vue éclatée - Tambour et cuve - DOC-0001.png');
+  assert.equal(f1._parent.getName(), 'Siemens WAT28420FF-01');
+
+  assert.equal(api('getDocData', f1.getId()), png);
+  const iv = api('saveIntervention', { nom: 'Dupont' });
+  const ph = api('uploadPhoto', iv.id, 'p.jpg', jpg);
+  assert.throws(() => api('getDocData', ph.id), /documentation/);
+  assert.ok(api('getListes').marques.includes('Siemens'));
+
+  api('deleteDoc', 'DOC-0001');
+  assert.equal(f1._trashed, true);
+  assert.equal(api('listDocs').length, 2);
+  assert.ok(photosRoot);
+});

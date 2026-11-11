@@ -7,9 +7,16 @@
  * Les modifications fusionnées sur GitHub sont donc appliquées automatiquement,
  * sans rien recoller ici.
  *
- * Sécurité : l'accès est protégé par une clé secrète (menu Dépannages › Lien de connexion).
- * Sans cette clé, l'API refuse toute demande.
+ * Sécurité : l'accès est protégé par une clé secrète. Sans cette clé, l'API refuse toute demande.
+ *
+ * Obtenir le lien de connexion (téléphone ou ordinateur) : dans cet éditeur, choisir la fonction
+ * « envoyerLienParEmail » dans la liste en haut, puis « Exécuter » : le lien arrive dans votre Gmail.
+ * Sur ordinateur, le menu de la feuille « Dépannages › Lien de connexion » fait la même chose.
  */
+
+// Adresse de l'application Web (Déployer › Gérer les déploiements, se termine par /exec).
+// Facultatif : si elle est vide, le script essaie de la trouver tout seul.
+var ADRESSE_API = '';
 
 var GITHUB_REPO = 'p69gp84gk7-arch/26altlasSB31';
 var GITHUB_BRANCH = 'main';
@@ -57,8 +64,9 @@ function doGet() {
 // ---------------------------------------------------------------------------
 
 function onOpen() {
-  SpreadsheetApp.getUi()
-    .createMenu('Dépannages')
+  var ui = ui_();
+  if (!ui) return; // exécuté depuis l'éditeur ou script non lié à la feuille : pas de menu
+  ui.createMenu('Dépannages')
     .addItem('Lien de connexion', 'afficherLienConnexion')
     .addItem('Appliquer les mises à jour GitHub maintenant', 'mettreAJourMaintenant')
     .addSeparator()
@@ -66,20 +74,42 @@ function onOpen() {
     .addToUi();
 }
 
-function afficherLienConnexion() {
-  var key = getOrCreateKey_();
-  var props = PropertiesService.getScriptProperties();
-  var url = props.getProperty('WEBAPP_URL') || '';
+/**
+ * À exécuter depuis l'éditeur (fonctionne aussi sur téléphone) :
+ * envoie le lien de connexion dans votre boîte Gmail et l'affiche dans le journal d'exécution.
+ */
+function envoyerLienParEmail() {
+  var url = adresseApi_();
   if (!url) {
-    var guess = '';
-    try { guess = ScriptApp.getService().getUrl() || ''; } catch (e) { /* pas encore déployé */ }
-    if (/\/exec$/.test(guess)) url = guess;
+    throw new Error("Adresse de l'application Web introuvable : collez-la entre les guillemets de " +
+      "ADRESSE_API en haut du fichier (Déployer › Gérer les déploiements › URL qui finit par /exec).");
   }
+  var link = lienConnexion_(url);
+  var to = Session.getEffectiveUser().getEmail();
+  MailApp.sendEmail({
+    to: to,
+    subject: 'Dépannages – lien de connexion',
+    body: 'Ouvrez ce lien une fois sur chaque téléphone / ordinateur :\n\n' + link +
+      '\n\nCe lien contient votre clé secrète : ne le transférez pas.',
+    htmlBody: '<p>Ouvrez ce lien <b>une fois</b> sur chaque téléphone / ordinateur :</p>' +
+      '<p><a href="' + link + '">Ouvrir le fichier clients</a></p>' +
+      '<p style="font-size:12px;color:#667085">Sur iPhone : appui long sur le lien › Ouvrir dans Safari, ' +
+      'puis Partager › Sur l\'écran d\'accueil.<br>Lien complet (à coller si l\'application le demande) :<br>' +
+      link + '</p><p style="font-size:12px;color:#667085">Ce lien contient votre clé secrète : ne le transférez pas.</p>'
+  });
+  Logger.log('Lien envoyé à ' + to + ' : ' + link);
+  return link;
+}
+
+/** Sur ordinateur, depuis le menu de la feuille : fenêtre avec le lien à copier. */
+function afficherLienConnexion() {
+  var ui = ui_();
+  if (!ui) return envoyerLienParEmail();
   var t = HtmlService.createTemplate(DIALOG_HTML_);
-  t.key = key;
-  t.url = url;
+  t.key = getOrCreateKey_();
+  t.url = adresseApi_();
   t.appUrl = APP_URL;
-  SpreadsheetApp.getUi().showModalDialog(t.evaluate().setWidth(520).setHeight(430), 'Lien de connexion');
+  ui.showModalDialog(t.evaluate().setWidth(520).setHeight(430), 'Lien de connexion');
 }
 
 /** Appelé par la boîte de dialogue : mémorise l'adresse /exec du déploiement. */
@@ -94,17 +124,22 @@ function enregistrerAdresseApi(url) {
 
 function mettreAJourMaintenant() {
   var api = loadApi_(true);
-  SpreadsheetApp.getUi().alert('Code à jour (version ' + api.VERSION + ').');
+  var msg = 'Code à jour (version ' + api.VERSION + ').';
+  var ui = ui_();
+  if (ui) ui.alert(msg); else Logger.log(msg);
 }
 
+/** Nouvelle clé : tous les appareils sont déconnectés ; le nouveau lien est envoyé par e-mail. */
 function changerCle() {
-  var ui = SpreadsheetApp.getUi();
-  var ok = ui.alert('Changer la clé ?',
-    'Tous les téléphones et ordinateurs connectés devront rouvrir le nouveau lien de connexion.',
-    ui.ButtonSet.OK_CANCEL);
-  if (ok !== ui.Button.OK) return;
+  var ui = ui_();
+  if (ui) {
+    var ok = ui.alert('Changer la clé ?',
+      'Tous les téléphones et ordinateurs connectés devront rouvrir le nouveau lien de connexion.',
+      ui.ButtonSet.OK_CANCEL);
+    if (ok !== ui.Button.OK) return;
+  }
   PropertiesService.getScriptProperties().setProperty('API_KEY', newKey_());
-  afficherLienConnexion();
+  if (ui) afficherLienConnexion(); else envoyerLienParEmail();
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +147,27 @@ function changerCle() {
 // ---------------------------------------------------------------------------
 
 var _api = null;
+
+/** Interface de la feuille, ou null (éditeur, téléphone, script non lié à une feuille). */
+function ui_() {
+  try { return SpreadsheetApp.getUi(); } catch (e) { return null; }
+}
+
+/** Adresse /exec : ADRESSE_API, sinon celle enregistrée, sinon celle du déploiement. */
+function adresseApi_() {
+  var props = PropertiesService.getScriptProperties();
+  var url = String(ADRESSE_API || '').trim() || props.getProperty('WEBAPP_URL') || '';
+  if (!url) {
+    try { url = ScriptApp.getService().getUrl() || ''; } catch (e) { url = ''; }
+  }
+  if (!/^https:\/\/script\.google\.com\/.+\/exec$/.test(url)) return '';
+  props.setProperty('WEBAPP_URL', url);
+  return url;
+}
+
+function lienConnexion_(url) {
+  return APP_URL + '#connexion=' + encodeURIComponent(url) + '&cle=' + getOrCreateKey_();
+}
 
 /** Télécharge (ou reprend du cache) backend/api.js et renvoie son objet API. */
 function loadApi_(force) {
@@ -177,6 +233,7 @@ function autorisations_() {
   DriveApp.getFolderById('x').createFolder('x');
   DriveApp.getFileById('x').setTrashed(true);
   UrlFetchApp.fetch('https://raw.githubusercontent.com/');
+  MailApp.sendEmail('x', 'x', 'x');
 }
 
 var DIALOG_HTML_ = [

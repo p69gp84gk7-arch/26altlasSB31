@@ -105,3 +105,29 @@ test('factures : archivage, contrôles, rangement par année, renommage et suppr
   assert.equal(api('saveFacture', { date: '2026-01-01' }, { name: 'x.pdf', dataUrl: pdf }).id, 'FAC-0003');
   assert.match(api('getLinks').facturesUrl, /1X2tx/);
 });
+
+test('chargeur : lien de connexion envoyé par e-mail (utilisable depuis un téléphone)', () => {
+  const sansAdresse = makeEnv();
+  assert.doesNotThrow(() => sansAdresse.ctx.onOpen(), 'onOpen ne doit pas planter sans interface');
+  assert.throws(() => sansAdresse.ctx.envoyerLienParEmail(), /ADRESSE_API/);
+
+  const exec = 'https://script.google.com/macros/s/AKfyTEST/exec';
+  const env = makeEnv({ deployedUrl: exec });
+  const link = env.ctx.envoyerLienParEmail();
+  assert.equal(env.mails.length, 1);
+  assert.equal(env.mails[0].to, 'moi@example.com');
+  assert.ok(env.mails[0].htmlBody.includes(link));
+  // Le lien est lu par l'application comme dans web/index.html (parseLink)
+  const params = new URLSearchParams(link.slice(link.indexOf('#') + 1));
+  assert.ok(link.startsWith('https://p69gp84gk7-arch.github.io/26altlasSB31/#'));
+  assert.equal(params.get('connexion'), exec);
+  assert.equal(params.get('cle'), env.props.API_KEY);
+  assert.equal(env.props.WEBAPP_URL, exec);
+  // La clé du lien est acceptée par l'API
+  assert.equal(env.post('listInterventions', [], params.get('cle')).ok, true);
+
+  // Nouvelle clé : l'ancienne est refusée, un nouveau lien est envoyé
+  env.ctx.changerCle();
+  assert.equal(env.mails.length, 2);
+  assert.equal(env.post('listInterventions', [], params.get('cle')).code, 'AUTH');
+});

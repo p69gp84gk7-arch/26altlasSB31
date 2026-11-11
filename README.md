@@ -76,7 +76,7 @@ Sur iPhone : appui long sur le lien › **Ouvrir dans Safari**, puis **Partager 
 
 ## Données enregistrées
 
-**Onglet Interventions** : ID (`INT-0001`…), nom, prénom, téléphone, adresse, type d'appareil, marque, panne / travaux, date de diagnostic, temps de diagnostic (min), date d'intervention, temps de réparation (min), pièce utilisée, montant pièce (€), montant réglé (€), terminé (case à cocher), lien du dossier photos, créé le, modifié le, marge (calculée : réglé − pièce).
+**Onglet Interventions** : ID (`INT-0001`…), nom, prénom, téléphone, adresse, type d'appareil, marque, référence de l'appareil, panne / travaux, date de diagnostic, temps de diagnostic (min), date d'intervention, temps de réparation (min), pièce utilisée, montant pièce (€), montant réglé (€), terminé (case à cocher), lien du dossier photos, créé le, modifié le, marge (calculée : réglé − pièce).
 
 **Listes déroulantes** (type d'appareil, marque, fournisseur) : elles proposent les valeurs de l'onglet **Listes** (pré-rempli avec les types et marques courants, modifiable dans la feuille) et toutes les valeurs déjà enregistrées. Le choix **Autre…** permet d'en saisir une nouvelle, qui sera proposée ensuite. Les fournisseurs viennent des factures déjà archivées (et de la colonne « Fournisseurs » de l'onglet Listes).
 
@@ -84,6 +84,8 @@ Sur iPhone : appui long sur le lien › **Ouvrir dans Safari**, puis **Partager 
 Fichiers rangés dans `Factures pièces/<année>/` et nommés `date_fournisseur_numéro_ID` (ex. `2026-11-12_Pieces-Express_FA-1234_FAC-0007.pdf`).
 
 **Onglet Récapitulatif** : interventions terminées / en cours, total pièces, total réglé, marge, total des factures archivées, heures de diagnostic, heures de réparation, marge par heure.
+
+**Documentation technique** : dès que la référence de l'appareil est saisie, la fiche propose des recherches préparées avec la marque et la référence : vue éclatée, manuel de service (PDF), pièces détachées (Spareka, SOS Accessoire), ManualsLib, Elektrotanya, iFixit, codes erreur. Il n'existe pas de base libre de vues éclatées : ces documents appartiennent aux fabricants. Dans l'UE, les réparateurs professionnels peuvent s'inscrire sur l'espace pro de chaque fabricant pour obtenir les vues éclatées officielles (règlements écoconception 2019/2023, 2019/2022, 2019/2019).
 
 **Temps passés** : dans la fiche, deux listes (de 5 en 5 min jusqu'à 1 h, puis de 15 en 15 min jusqu'à 10 h). La fiche affiche le temps total et la marge par heure. Dans la feuille, les temps sont en minutes.
 

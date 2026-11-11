@@ -59,7 +59,7 @@ test('photos : dossier créé au premier envoi, renommé avec le client, suppres
   assert.deepEqual(api('listPhotos', r1.id), { folderUrl: '', photos: [] });
   const ph = api('uploadPhoto', r1.id, 'a.jpg', jpg);
   assert.equal(api('listPhotos', r1.id).photos.length, 1);
-  assert.match(rows[1][16], /folders\//);
+  assert.match(rows[1][17], /folders\//);
   assert.equal(api('getPhotoData', ph.id), jpg);
   api('saveIntervention', Object.assign({}, r1, { nom: 'Durand' }));
   const folder = Object.values(items).find(x => x._kind === 'folder' && x._parent === photosRoot);
@@ -140,11 +140,12 @@ test('feuille : colonne Marque ajoutée automatiquement, données existantes dé
   const list = api('listInterventions');
   assert.equal(rows[0][5], "Type d'appareil");
   assert.equal(rows[0][6], 'Marque');
-  assert.equal(rows[0][8], 'Date de diagnostic');
-  assert.equal(rows[0][9], 'Temps diagnostic (min)');
-  assert.equal(rows[0][10], "Date d'intervention");
-  assert.equal(rows[0][11], 'Temps réparation (min)');
-  assert.equal(rows[0][19], 'Marge (€)', 'la colonne de marge se décale en T');
+  assert.equal(rows[0][7], 'Référence');
+  assert.equal(rows[0][9], 'Date de diagnostic');
+  assert.equal(rows[0][10], 'Temps diagnostic (min)');
+  assert.equal(rows[0][11], "Date d'intervention");
+  assert.equal(rows[0][12], 'Temps réparation (min)');
+  assert.equal(rows[0][20], 'Marge (€)', 'la colonne de marge se décale en U');
   assert.equal(list[0].appareil, 'Lave-linge Bosch');
   assert.equal(list[0].marque, '');
   assert.equal(list[0].panne, 'Fuite');
@@ -157,7 +158,7 @@ test('feuille : colonne Marque ajoutée automatiquement, données existantes dé
   assert.equal(rows[0].filter(h => h === 'Temps réparation (min)').length, 1);
 });
 
-test('feuille : depuis la version avec Marque, seules les colonnes de temps sont ajoutées', () => {
+test('feuille : depuis la version avec Marque, les colonnes Référence et temps sont ajoutées', () => {
   const { api, rows, ctx } = makeEnv();
   // Feuille telle qu'elle est après la mise à jour « Marque » (état réel actuel)
   rows[0] = ['ID', 'Nom', 'Prénom', 'Téléphone', 'Adresse', "Type d'appareil", 'Marque', 'Panne / travaux',
@@ -167,7 +168,8 @@ test('feuille : depuis la version avec Marque, seules les colonnes de temps sont
   rows.push(['INT-0001', 'Jalabert', 'Jean Philippe', '', '', 'Sèche-linge', 'Whirlpool', 'Courroie HS', d, d2,
     'Courroie', 25.98, '', false, 'https://drive.google.com/drive/folders/abc', d, d]);
   const it = api('listInterventions')[0];
-  assert.equal(rows[0].length, 20);
+  assert.equal(rows[0].length, 21);
+  assert.equal(it.reference, '');
   assert.equal(it.marque, 'Whirlpool');
   assert.equal(it.dateDiagnostic, '2026-10-31');
   assert.equal(it.tempsDiagnostic, '');
@@ -182,16 +184,16 @@ test('temps : diagnostic et réparation en minutes, récapitulatif en heures', (
   const r = api('saveIntervention', { nom: 'Dupont', tempsDiagnostic: '30', tempsReparation: '75' });
   assert.equal(r.tempsDiagnostic, 30);
   assert.equal(r.tempsReparation, 75);
-  assert.equal(rows[1][9], 30);
-  assert.equal(rows[1][11], 75);
+  assert.equal(rows[1][10], 30);
+  assert.equal(rows[1][12], 75);
   assert.throws(() => api('saveIntervention', { nom: 'X', tempsReparation: '-5' }), /Durée invalide/);
   const r2 = api('saveIntervention', { id: r.id, nom: 'Dupont', tempsDiagnostic: '' });
   assert.equal(r2.tempsDiagnostic, '');
   assert.equal(r2.tempsReparation, 75, 'temps absent de la demande : conservé');
   const recap = extraSheets['Récapitulatif']._rows;
   assert.deepEqual(recap.slice(8).map(x => x[0]), ['Temps de diagnostic (h)', 'Temps de réparation (h)', 'Marge par heure (€/h)']);
-  assert.equal(recap[8][1], '=SUM(Interventions!J2:J)/60');
-  assert.equal(recap[9][1], '=SUM(Interventions!L2:L)/60');
+  assert.equal(recap[8][1], '=SUM(Interventions!K2:K)/60');
+  assert.equal(recap[9][1], '=SUM(Interventions!M2:M)/60');
   assert.equal(recap[10][1], '=IFERROR(B7/(B9+B10))');
   api('listInterventions');
   assert.equal(recap.length, 11, 'lignes ajoutées une seule fois');
@@ -226,4 +228,28 @@ test('listes déroulantes : onglet Listes créé, valeurs enregistrées ajoutée
   // Valeur ajoutée à la main dans l'onglet Listes
   extraSheets.Listes._rows.push(['', '', 'Fournisseur Manuel']);
   assert.ok(api('getListes').fournisseurs.includes('Fournisseur Manuel'));
+});
+
+test('feuille : depuis la version avec les temps (état réel), seule la colonne Référence est ajoutée', () => {
+  const { api, rows, ctx } = makeEnv();
+  rows[0] = ['ID', 'Nom', 'Prénom', 'Téléphone', 'Adresse', "Type d'appareil", 'Marque', 'Panne / travaux',
+    'Date de diagnostic', 'Temps diagnostic (min)', "Date d'intervention", 'Temps réparation (min)', 'Pièce utilisée',
+    'Montant pièce (€)', 'Montant réglé (€)', 'Terminé', 'Dossier photos', 'Créé le', 'Modifié le', 'Marge (€)'];
+  const d = new ctx.Date(2026, 9, 31, 12);
+  rows.push(['INT-0002', 'Samson', 'Marine', '', '', 'Lave-linge', 'Beko', 'Verrous de porte HS', d, 30, d, 60,
+    'Verrous de porte', 20.4, '', false, 'https://drive.google.com/drive/folders/xyz', d, d]);
+  const it = api('listInterventions')[0];
+  assert.equal(rows[0].length, 21);
+  assert.equal(rows[0][7], 'Référence');
+  assert.equal(it.marque, 'Beko');
+  assert.equal(it.reference, '');
+  assert.equal(it.panne, 'Verrous de porte HS');
+  assert.equal(it.tempsDiagnostic, 30);
+  assert.equal(it.tempsReparation, 60);
+  assert.equal(it.montantPiece, 20.4);
+  assert.equal(it.dossierPhotos, 'https://drive.google.com/drive/folders/xyz');
+  // Référence enregistrée en texte (une référence en chiffres garde ses points / zéros)
+  const r = api('saveIntervention', { id: 'INT-0002', nom: 'Samson', reference: '0123456789' });
+  assert.equal(r.reference, '0123456789');
+  assert.equal(rows[1][7], '0123456789');
 });

@@ -46,6 +46,8 @@
       background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
       background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
     .field .choice-other { margin-top: 8px; }
+    .doc-links { display: flex; flex-wrap: wrap; gap: 8px; }
+    .doc-links a { text-decoration: none; font-size: 14px; padding: 8px 12px; }
     .file-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .file-pick .name { font-size: 14px; color: var(--muted); word-break: break-all; }
     .mini { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
@@ -171,7 +173,7 @@
       <div class="stat"><b id="stMargin">–</b><span>Marge (réglé − pièces)</span></div>
     </div>
     <div class="toolbar">
-      <input id="search" type="search" placeholder="Rechercher un client, un appareil…">
+      <input id="search" type="search" placeholder="Rechercher un client, un appareil, une référence…">
       <div class="chips">
         <button class="chip on" data-filter="all">Toutes</button>
         <button class="chip" data-filter="wip">En cours</button>
@@ -208,6 +210,9 @@
           <div class="field"><label for="marque">Marque</label>
             <select id="marque" class="choice"></select>
             <input id="marqueAutre" class="choice-other hidden" placeholder="Nouvelle marque"></div>
+          <div class="field full"><label for="reference">Référence de l'appareil</label>
+            <input id="reference" name="reference" autocapitalize="characters" autocorrect="off" spellcheck="false"
+              placeholder="Plaque signalétique : ex. WAT28420FF/01, E-Nr, PNC…"></div>
           <div class="field"><label for="dateDiagnostic">Date de diagnostic</label><input id="dateDiagnostic" name="dateDiagnostic" type="date"></div>
           <div class="field"><label for="tempsDiagnostic">Temps de diagnostic</label><select id="tempsDiagnostic" class="duree"></select></div>
           <div class="field"><label for="dateIntervention">Date d'intervention</label><input id="dateIntervention" name="dateIntervention" type="date"></div>
@@ -233,6 +238,12 @@
         <button type="button" class="btn danger hidden" id="btnDelete">Supprimer la fiche</button>
       </div>
     </form>
+
+    <div class="card">
+      <h2>Documentation technique</h2>
+      <div class="doc-links" id="docLinks"></div>
+      <p class="hint" id="docHint"></p>
+    </div>
 
     <div class="card">
       <h2>Factures des pièces</h2>
@@ -350,8 +361,39 @@
     document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('on', t.getAttribute('data-tab') === tab); });
     window.scrollTo(0, 0);
   }
-  var FIELDS = ['nom', 'prenom', 'telephone', 'adresse', 'dateDiagnostic', 'dateIntervention',
+  var FIELDS = ['nom', 'prenom', 'telephone', 'adresse', 'reference', 'dateDiagnostic', 'dateIntervention',
                 'piece', 'panne', 'montantPiece', 'montantRegle'];
+
+  // ------------------------------------------------------------------
+  // Documentation technique : recherches préparées à partir de la marque et de la référence.
+  // Il n'existe pas de base libre de vues éclatées : on interroge les sources qui en publient.
+  // ------------------------------------------------------------------
+  function google(q) { return 'https://www.google.com/search?q=' + encodeURIComponent(q); }
+
+  function docSearches(marque, ref, type) {
+    var r = '"' + ref + '"', m = marque ? marque + ' ' : '';
+    return [
+      { label: 'Vue éclatée', url: google(m + r + ' vue éclatée OR "exploded view"') },
+      { label: 'Manuel de service (PDF)', url: google(m + r + ' "service manual" OR "manuel de service" OR "schéma électrique" filetype:pdf') },
+      { label: 'Pièces détachées', url: google(r + ' site:spareka.fr OR site:sos-accessoire.com') },
+      { label: 'ManualsLib', url: google(m + r + ' site:manualslib.com') },
+      { label: 'Elektrotanya', url: google(r + ' site:elektrotanya.com') },
+      { label: 'iFixit', url: 'https://www.ifixit.com/Search?query=' + encodeURIComponent((m + ref).trim()) },
+      { label: 'Codes erreur', url: google(m + (type ? type + ' ' : '') + r + ' code erreur') }
+    ];
+  }
+
+  function renderDocLinks() {
+    var ref = $('reference').value.trim();
+    var marque = choiceValue('marque'), type = choiceValue('appareil');
+    $('docLinks').innerHTML = ref ? docSearches(marque, ref, type).map(function (d) {
+      return '<a class="btn ghost" target="_blank" rel="noopener" href="' + esc(d.url) + '">' + esc(d.label) + '</a>';
+    }).join('') : '';
+    $('docHint').textContent = ref
+      ? 'Recherches avec « ' + [marque, ref].filter(Boolean).join(' ') + ' ». Les vues éclatées officielles sont aussi sur ' +
+        'l\'espace réparateurs professionnels de chaque fabricant (accès obligatoire pour les pros dans l\'UE).'
+      : 'Saisissez la référence de l\'appareil pour chercher vue éclatée, manuel de service et pièces.';
+  }
 
   // ------------------------------------------------------------------
   // Listes déroulantes (type d'appareil, marque, fournisseur) avec « Autre… »
@@ -575,7 +617,7 @@
       if (state.filter === 'wip' && it.termine) return false;
       if (state.filter === 'done' && !it.termine) return false;
       if (!q) return true;
-      return [it.id, it.nom, it.prenom, it.telephone, it.adresse, it.appareil, it.marque, it.piece, it.panne]
+      return [it.id, it.nom, it.prenom, it.telephone, it.adresse, it.appareil, it.marque, it.reference, it.piece, it.panne]
         .join(' ').toLowerCase().indexOf(q) !== -1;
     });
     if (!rows.length) {
@@ -620,6 +662,7 @@
     fillChoice('marque', listes('marques'), f.marque);
     fillDuree('tempsDiagnostic', f.tempsDiagnostic);
     fillDuree('tempsReparation', f.tempsReparation);
+    renderDocLinks();
     $('termine').checked = !!f.termine;
     $('formTitle').textContent = item ? ((item.nom + ' ' + item.prenom).trim() + ' · ' + item.id) : 'Nouvelle intervention';
     $('btnDelete').classList.toggle('hidden', !item);
@@ -1020,6 +1063,10 @@
   $('montantPiece').addEventListener('input', updateMargin);
   $('montantRegle').addEventListener('input', updateMargin);
   $('tempsDiagnostic').addEventListener('change', updateMargin);
+  $('reference').addEventListener('input', renderDocLinks);
+  $('marque').addEventListener('change', renderDocLinks);
+  $('marqueAutre').addEventListener('input', renderDocLinks);
+  $('appareil').addEventListener('change', renderDocLinks);
   $('tempsReparation').addEventListener('change', updateMargin);
   $('search').addEventListener('input', renderList);
   document.querySelectorAll('.chip').forEach(function (c) {

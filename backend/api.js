@@ -31,8 +31,8 @@ var CONFIG = {
   MAX_FILE_MB: 20
 };
 
-// Ordre des colonnes A → S de la feuille « Interventions ».
-// La colonne T (Marge) est calculée par une formule dans la feuille : le script n'y écrit jamais.
+// Ordre des colonnes A → T de la feuille « Interventions ».
+// La colonne U (Marge) est calculée par une formule dans la feuille : le script n'y écrit jamais.
 // Les temps sont enregistrés en minutes.
 var COLUMNS = [
   'id',               // A  ID
@@ -42,20 +42,21 @@ var COLUMNS = [
   'adresse',          // E  Adresse
   'appareil',         // F  Type d'appareil
   'marque',           // G  Marque
-  'panne',            // H  Panne / travaux
-  'dateDiagnostic',   // I  Date de diagnostic
-  'tempsDiagnostic',  // J  Temps diagnostic (min)
-  'dateIntervention', // K  Date d'intervention
-  'tempsReparation',  // L  Temps réparation (min)
-  'piece',            // M  Pièce utilisée
-  'montantPiece',     // N  Montant pièce (€)
-  'montantRegle',     // O  Montant réglé (€)
-  'termine',          // P  Terminé
-  'dossierPhotos',    // Q  Dossier photos (lien Drive)
-  'creeLe',           // R  Créé le
-  'modifieLe'         // S  Modifié le
+  'reference',        // H  Référence de l'appareil (texte)
+  'panne',            // I  Panne / travaux
+  'dateDiagnostic',   // J  Date de diagnostic
+  'tempsDiagnostic',  // K  Temps diagnostic (min)
+  'dateIntervention', // L  Date d'intervention
+  'tempsReparation',  // M  Temps réparation (min)
+  'piece',            // N  Pièce utilisée
+  'montantPiece',     // O  Montant pièce (€)
+  'montantRegle',     // P  Montant réglé (€)
+  'termine',          // Q  Terminé
+  'dossierPhotos',    // R  Dossier photos (lien Drive)
+  'creeLe',           // S  Créé le
+  'modifieLe'         // T  Modifié le
 ];
-var HEADERS = ['ID', 'Nom', 'Prénom', 'Téléphone', 'Adresse', "Type d'appareil", 'Marque', 'Panne / travaux',
+var HEADERS = ['ID', 'Nom', 'Prénom', 'Téléphone', 'Adresse', "Type d'appareil", 'Marque', 'Référence', 'Panne / travaux',
   'Date de diagnostic', 'Temps diagnostic (min)', "Date d'intervention", 'Temps réparation (min)', 'Pièce utilisée', 'Montant pièce (€)', 'Montant réglé (€)',
   'Terminé', 'Dossier photos', 'Créé le', 'Modifié le'];
 var COL = {};
@@ -143,6 +144,7 @@ function saveIntervention(data) {
     row[COL.adresse] = field('adresse', clean_);
     row[COL.appareil] = field('appareil', clean_);
     row[COL.marque] = field('marque', clean_);
+    row[COL.reference] = field('reference', clean_);
     row[COL.panne] = field('panne', clean_);
     row[COL.dateDiagnostic] = field('dateDiagnostic', parseDate_);
     row[COL.tempsDiagnostic] = field('tempsDiagnostic', parseMinutes_);
@@ -159,6 +161,7 @@ function saveIntervention(data) {
     // Le téléphone est enregistré comme texte (garde le 0 initial).
     var range = sh.getRange(rowIndex, 1, 1, NB_COLS);
     sh.getRange(rowIndex, COL.telephone + 1).setNumberFormat('@');
+    sh.getRange(rowIndex, COL.reference + 1).setNumberFormat('@'); // ex. « 911.239.123 » reste du texte
     range.setValues([row]);
 
     // Si le client a été renommé, on renomme aussi son dossier photos.
@@ -416,6 +419,7 @@ var _schemaChecked = false;
 // Colonnes ajoutées par des versions successives : insérées à leur place si elles manquent.
 var COLONNES_AJOUTEES = {
   'Marque': { width: 130 },
+  'Référence': { width: 160, format: '@' },
   'Temps diagnostic (min)': { width: 110, format: '0" min"' },
   'Temps réparation (min)': { width: 110, format: '0" min"' }
 };
@@ -557,6 +561,7 @@ function toRecord_(row, tz) {
   var rec = rowToObject_(COLUMNS, row, tz);
   rec.id = String(rec.id);
   rec.telephone = String(rec.telephone);
+  rec.reference = String(rec.reference);
   rec.termine = rec.termine === true;
   return rec;
 }
@@ -737,7 +742,7 @@ function factureFileFromUrl_(url) {
 // Fonctions exposées à l'application (appelées par le chargeur apps-script/Code.gs)
 // ---------------------------------------------------------------------------
 var API = {
-  VERSION: '2026-11-11.4',
+  VERSION: '2026-11-11.5',
   ACTIONS: {
     listInterventions: listInterventions,
     saveIntervention: saveIntervention,

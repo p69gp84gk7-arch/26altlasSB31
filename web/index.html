@@ -37,15 +37,25 @@
     header .wrap { display: flex; align-items: center; gap: 12px; padding-top: 12px; padding-bottom: 12px; }
     header h1 { font-size: 18px; margin: 0; flex: 1; font-weight: 600; }
     header a { color: #fff; font-size: 14px; opacity: .85; }
-    .tabs { display: flex; gap: 4px; padding-bottom: 0 !important; padding-top: 0 !important; }
-    .tab { background: transparent; border: 0; color: rgba(255,255,255,.75); padding: 10px 14px; cursor: pointer;
-      font-weight: 600; border-bottom: 3px solid transparent; }
+    .tabs { display: flex; gap: 2px; padding-bottom: 0 !important; padding-top: 0 !important; overflow-x: auto; }
+    .tab { background: transparent; border: 0; color: rgba(255,255,255,.75); padding: 10px 10px; cursor: pointer;
+      font-weight: 600; border-bottom: 3px solid transparent; white-space: nowrap; font-size: 15px; }
     .tab.on { color: #fff; border-bottom-color: #fff; }
     .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff;
       -webkit-appearance: none; appearance: none; color: var(--text);
       background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%);
       background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%; background-size: 5px 5px; background-repeat: no-repeat; }
     .field .choice-other { margin-top: 8px; }
+    .doc-links { display: flex; flex-wrap: wrap; gap: 8px; }
+    .doc-links a { text-decoration: none; font-size: 14px; padding: 8px 12px; }
+    .ph.doc-tile img { position: absolute; inset: 0; }
+    .ph.doc-tile .pdf { position: absolute; top: 30%; left: 0; right: 0; text-align: center; font-weight: 700;
+      font-size: 22px; color: var(--danger); }
+    .ph.doc-tile .wait { position: absolute; top: 40%; left: 0; right: 0; text-align: center; }
+    .ph.doc-tile .cap { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(29,36,51,.8); color: #fff;
+      font-size: 11px; padding: 4px 6px; line-height: 1.25; max-height: 3.8em; overflow: hidden; text-align: left; }
+    .doc-preview img { width: 100%; border-radius: 10px; border: 1px solid var(--line); margin-top: 12px; display: block; }
+    .sub { color: var(--muted); font-size: 14px; margin: 4px 0 0; }
     .file-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .file-pick .name { font-size: 14px; color: var(--muted); word-break: break-all; }
     .mini { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
@@ -140,7 +150,8 @@
     </div>
     <div class="wrap tabs">
       <button class="tab on" data-tab="list">Interventions</button>
-      <button class="tab" data-tab="factures">Factures pièces</button>
+      <button class="tab" data-tab="factures">Factures</button>
+      <button class="tab" data-tab="docs">Documentation</button>
     </div>
   </header>
 
@@ -171,7 +182,7 @@
       <div class="stat"><b id="stMargin">–</b><span>Marge (réglé − pièces)</span></div>
     </div>
     <div class="toolbar">
-      <input id="search" type="search" placeholder="Rechercher un client, un appareil…">
+      <input id="search" type="search" placeholder="Rechercher un client, un appareil, une référence…">
       <div class="chips">
         <button class="chip on" data-filter="all">Toutes</button>
         <button class="chip" data-filter="wip">En cours</button>
@@ -208,6 +219,9 @@
           <div class="field"><label for="marque">Marque</label>
             <select id="marque" class="choice"></select>
             <input id="marqueAutre" class="choice-other hidden" placeholder="Nouvelle marque"></div>
+          <div class="field full"><label for="reference">Référence de l'appareil</label>
+            <input id="reference" name="reference" autocapitalize="characters" autocorrect="off" spellcheck="false"
+              placeholder="Plaque signalétique : ex. WAT28420FF/01, E-Nr, PNC…"></div>
           <div class="field"><label for="dateDiagnostic">Date de diagnostic</label><input id="dateDiagnostic" name="dateDiagnostic" type="date"></div>
           <div class="field"><label for="tempsDiagnostic">Temps de diagnostic</label><select id="tempsDiagnostic" class="duree"></select></div>
           <div class="field"><label for="dateIntervention">Date d'intervention</label><input id="dateIntervention" name="dateIntervention" type="date"></div>
@@ -233,6 +247,18 @@
         <button type="button" class="btn danger hidden" id="btnDelete">Supprimer la fiche</button>
       </div>
     </form>
+
+    <div class="card">
+      <h2>Documentation technique</h2>
+      <div id="formDocs"></div>
+      <div class="doc-links" style="margin:12px 0">
+        <button type="button" class="btn" id="btnFormAddDoc">+ Ajouter un document</button>
+        <button type="button" class="btn ghost" id="btnFormMachine">Fiche appareil</button>
+      </div>
+      <p class="hint" style="margin-bottom:8px">Chercher en ligne :</p>
+      <div class="doc-links" id="docLinks"></div>
+      <p class="hint" id="docHint"></p>
+    </div>
 
     <div class="card">
       <h2>Factures des pièces</h2>
@@ -310,6 +336,83 @@
     </form>
   </div>
 
+  <!-- ============ DOCUMENTATION : LISTE DES APPAREILS ============ -->
+  <div class="wrap hidden" id="viewDocs">
+    <div class="toolbar" style="margin-top:16px">
+      <input id="dSearch" type="search" placeholder="Rechercher une marque, une référence…">
+      <button class="btn" id="btnNewDoc">+ Document</button>
+    </div>
+    <div class="list" id="dList"><div class="loading">Chargement…</div></div>
+    <p class="hint">Un appareil = une référence. Les documents sont rangés dans Google Drive, dossier
+      « Documentation technique », un sous-dossier par appareil.
+      <a id="lnkDocs" href="#" target="_blank" class="hidden">Ouvrir le dossier</a></p>
+  </div>
+
+  <!-- ============ FICHE APPAREIL ============ -->
+  <div class="wrap hidden" id="viewMachine">
+    <div class="topline">
+      <button class="btn ghost" id="btnMBack">‹ Retour</button>
+      <h2 id="mTitle">Appareil</h2>
+    </div>
+    <p class="sub" id="mSub"></p>
+    <div class="card">
+      <h2>Documents</h2>
+      <div id="mDocs"></div>
+      <div style="margin-top:12px"><button type="button" class="btn" id="btnMAddDoc">+ Ajouter un document</button></div>
+    </div>
+    <div class="card">
+      <h2>Chercher en ligne</h2>
+      <div class="doc-links" id="mLinks"></div>
+    </div>
+    <div class="card">
+      <h2>Interventions sur cet appareil</h2>
+      <div class="mini" id="mInterventions"></div>
+    </div>
+  </div>
+
+  <!-- ============ DOCUMENT ============ -->
+  <div class="wrap hidden" id="viewDoc">
+    <div class="topline">
+      <button class="btn ghost" id="btnDBack">‹ Retour</button>
+      <h2 id="dTitle">Nouveau document</h2>
+    </div>
+    <form id="docForm" autocomplete="off">
+      <div class="card">
+        <h2>Fichier</h2>
+        <div class="file-pick" id="dPickNew">
+          <label class="btn" for="dFile" id="btnPickDoc">Choisir une capture, une photo ou un PDF</label>
+          <input type="file" id="dFile" accept="image/*,application/pdf" class="file-input">
+          <span class="name" id="dFileName">Aucun fichier choisi</span>
+        </div>
+        <div class="file-pick hidden" id="dPickExisting">
+          <a id="dOpen" href="#" target="_blank" rel="noopener" class="btn ghost">Ouvrir dans Drive (zoom)</a>
+        </div>
+        <div class="doc-preview" id="dPreview"></div>
+      </div>
+      <div class="card">
+        <h2>Appareil et contenu</h2>
+        <div class="grid">
+          <div class="field full"><label for="dReference">Référence de l'appareil *</label>
+            <input id="dReference" autocapitalize="characters" autocorrect="off" spellcheck="false"
+              placeholder="Ex. WAT28420FF/01"></div>
+          <div class="field"><label for="dMarque">Marque</label>
+            <select id="dMarque" class="choice"></select>
+            <input id="dMarqueAutre" class="choice-other hidden" placeholder="Nouvelle marque"></div>
+          <div class="field"><label for="dAppareil">Type d'appareil</label>
+            <select id="dAppareil" class="choice"></select>
+            <input id="dAppareilAutre" class="choice-other hidden" placeholder="Nouveau type d'appareil"></div>
+          <div class="field"><label for="dCategorie">Catégorie</label><select id="dCategorie"></select></div>
+          <div class="field"><label for="dTitre">Titre</label><input id="dTitre" placeholder="Ex. Tambour, carte de puissance…"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="submit" class="btn" id="btnDSave">Enregistrer le document</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn danger hidden" id="btnDDelete">Supprimer</button>
+      </div>
+    </form>
+  </div>
+
   <!-- ============ VISIONNEUSE ============ -->
   <div class="lightbox" id="lightbox">
     <img id="lbImg" alt="">
@@ -341,17 +444,65 @@
     facture: null,      // facture ouverte (null = nouvelle)
     fReturn: 'factures',// vue à afficher après la fiche facture
     fFile: null,        // fichier choisi {name, dataUrl}
-    listes: null        // {types, marques, fournisseurs} venant de la feuille
+    listes: null,       // {types, marques, fournisseurs} venant de la feuille
+    docs: [],           // documentation technique
+    docsLoaded: false,
+    docCache: {},       // id fichier Drive -> data URL (images)
+    machineKey: '',     // appareil ouvert (référence normalisée)
+    machinePreset: null,
+    mReturn: 'docs',    // vue après la fiche appareil : 'docs' ou 'form'
+    doc: null,          // document ouvert (null = nouveau)
+    dReturn: 'docs',    // vue après le document : 'docs', 'machine' ou 'form'
+    dFile: null         // fichier de documentation choisi {name, dataUrl, image}
   };
-  var VIEWS = ['viewSetup', 'viewList', 'viewForm', 'viewFactures', 'viewFacture'];
+  var VIEWS = ['viewSetup', 'viewList', 'viewForm', 'viewFactures', 'viewFacture', 'viewDocs', 'viewMachine', 'viewDoc'];
   function show(view) {
     VIEWS.forEach(function (v) { $(v).classList.toggle('hidden', v !== view); });
-    var tab = (view === 'viewFactures' || (view === 'viewFacture' && state.fReturn === 'factures')) ? 'factures' : 'list';
+    var fromForm = state.mReturn === 'form';
+    var tab = (view === 'viewFactures' || (view === 'viewFacture' && state.fReturn === 'factures')) ? 'factures'
+      : (view === 'viewDocs' || (view === 'viewMachine' && !fromForm) ||
+         (view === 'viewDoc' && (state.dReturn === 'docs' || (state.dReturn === 'machine' && !fromForm)))) ? 'docs' : 'list';
     document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('on', t.getAttribute('data-tab') === tab); });
     window.scrollTo(0, 0);
   }
-  var FIELDS = ['nom', 'prenom', 'telephone', 'adresse', 'dateDiagnostic', 'dateIntervention',
+  var FIELDS = ['nom', 'prenom', 'telephone', 'adresse', 'reference', 'dateDiagnostic', 'dateIntervention',
                 'piece', 'panne', 'montantPiece', 'montantRegle'];
+
+  // ------------------------------------------------------------------
+  // Documentation technique : recherches préparées à partir de la marque et de la référence.
+  // Il n'existe pas de base libre de vues éclatées : on interroge les sources qui en publient.
+  // ------------------------------------------------------------------
+  function google(q) { return 'https://www.google.com/search?q=' + encodeURIComponent(q); }
+
+  function docSearches(marque, ref, type) {
+    var r = '"' + ref + '"', m = marque ? marque + ' ' : '';
+    return [
+      { label: 'Vue éclatée', url: google(m + r + ' vue éclatée OR "exploded view"') },
+      { label: 'Manuel de service (PDF)', url: google(m + r + ' "service manual" OR "manuel de service" OR "schéma électrique" filetype:pdf') },
+      { label: 'Pièces détachées', url: google(r + ' site:spareka.fr OR site:sos-accessoire.com') },
+      { label: 'ManualsLib', url: google(m + r + ' site:manualslib.com') },
+      { label: 'Elektrotanya', url: google(r + ' site:elektrotanya.com') },
+      { label: 'iFixit', url: 'https://www.ifixit.com/Search?query=' + encodeURIComponent((m + ref).trim()) },
+      { label: 'Codes erreur', url: google(m + (type ? type + ' ' : '') + r + ' code erreur') }
+    ];
+  }
+
+  function docLinksHtml(marque, ref, type) {
+    return ref ? docSearches(marque, ref, type).map(function (d) {
+      return '<a class="btn ghost" target="_blank" rel="noopener" href="' + esc(d.url) + '">' + esc(d.label) + '</a>';
+    }).join('') : '';
+  }
+
+  function renderDocLinks() {
+    var ref = $('reference').value.trim();
+    var marque = choiceValue('marque'), type = choiceValue('appareil');
+    $('docLinks').innerHTML = docLinksHtml(marque, ref, type);
+    renderFormDocs();
+    $('docHint').textContent = ref
+      ? 'Recherches avec « ' + [marque, ref].filter(Boolean).join(' ') + ' ». Les vues éclatées officielles sont aussi sur ' +
+        'l\'espace réparateurs professionnels de chaque fabricant (accès obligatoire pour les pros dans l\'UE).'
+      : 'Saisissez la référence de l\'appareil pour chercher vue éclatée, manuel de service et pièces.';
+  }
 
   // ------------------------------------------------------------------
   // Listes déroulantes (type d'appareil, marque, fournisseur) avec « Autre… »
@@ -398,7 +549,7 @@
     var base = (state.listes && state.listes[kind]) || [];
     var used = kind === 'fournisseurs'
       ? state.factures.map(function (f) { return f.fournisseur; })
-      : state.items.map(function (it) { return kind === 'types' ? it.appareil : it.marque; });
+      : state.items.concat(state.docs).map(function (it) { return kind === 'types' ? it.appareil : it.marque; });
     return uniqueSorted(base.concat(used));
   }
 
@@ -494,7 +645,7 @@
       applyLinks(l);
       toast('Appareil connecté');
       showList();
-      return loadList().then(loadFactures).then(loadListes);
+      return loadList().then(loadFactures).then(loadDocs).then(loadListes);
     }).catch(function (e) {
       if (!e.auth) showSetup('Connexion impossible : ' + errMsg(e));
     }).finally(function () { $('btnSetup').disabled = false; });
@@ -505,6 +656,7 @@
     $('lnkSheet').classList.remove('hidden');
     $('lnkFactures').href = l.facturesUrl;
     $('lnkFactures').classList.remove('hidden');
+    if (l.docsUrl) { $('lnkDocs').href = l.docsUrl; $('lnkDocs').classList.remove('hidden'); }
   }
 
   function toast(msg, isErr) {
@@ -575,7 +727,7 @@
       if (state.filter === 'wip' && it.termine) return false;
       if (state.filter === 'done' && !it.termine) return false;
       if (!q) return true;
-      return [it.id, it.nom, it.prenom, it.telephone, it.adresse, it.appareil, it.marque, it.piece, it.panne]
+      return [it.id, it.nom, it.prenom, it.telephone, it.adresse, it.appareil, it.marque, it.reference, it.piece, it.panne]
         .join(' ').toLowerCase().indexOf(q) !== -1;
     });
     if (!rows.length) {
@@ -620,6 +772,7 @@
     fillChoice('marque', listes('marques'), f.marque);
     fillDuree('tempsDiagnostic', f.tempsDiagnostic);
     fillDuree('tempsReparation', f.tempsReparation);
+    renderDocLinks();
     $('termine').checked = !!f.termine;
     $('formTitle').textContent = item ? ((item.nom + ' ' + item.prenom).trim() + ' · ' + item.id) : 'Nouvelle intervention';
     $('btnDelete').classList.toggle('hidden', !item);
@@ -1011,6 +1164,243 @@
   }
 
   // ------------------------------------------------------------------
+  // Bibliothèque de documentation : un appareil = une référence
+  // ------------------------------------------------------------------
+  var CATEGORIES = ['Vue éclatée', 'Schéma électrique', 'Manuel de service', 'Codes erreur', 'Notice', 'Autre'];
+
+  /** « wat 28420ff/01 » et « WAT28420FF/01 » désignent le même appareil. */
+  function normRef(r) { return String(r == null ? '' : r).toUpperCase().replace(/\s+/g, ''); }
+  function fileIdOf(url) { var m = /\/d\/([\w-]+)/.exec(String(url || '')); return m ? m[1] : ''; }
+  function plural(n, word) { return n + ' ' + word + (n > 1 ? 's' : ''); }
+
+  /** Appareils connus : références des documents et des fiches d'intervention. */
+  function machines() {
+    var map = {};
+    function get(ref, marque, appareil) {
+      var k = normRef(ref);
+      if (!k) return null;
+      var m = map[k] || (map[k] = { key: k, reference: String(ref).trim(), marque: '', appareil: '', docs: [], interventions: [] });
+      if (!m.marque && marque) m.marque = marque;
+      if (!m.appareil && appareil) m.appareil = appareil;
+      return m;
+    }
+    state.docs.forEach(function (d) { var m = get(d.reference, d.marque, d.appareil); if (m) m.docs.push(d); });
+    state.items.forEach(function (it) { var m = get(it.reference, it.marque, it.appareil); if (m) m.interventions.push(it); });
+    return Object.keys(map).map(function (k) { return map[k]; }).sort(function (a, b) {
+      return (a.marque || '~').localeCompare(b.marque || '~', 'fr', { sensitivity: 'base' }) ||
+        a.reference.localeCompare(b.reference, 'fr', { sensitivity: 'base' });
+    });
+  }
+  function machineLabel(m) { return [m.marque, m.reference].filter(Boolean).join(' '); }
+  function docsOf(ref) {
+    var k = normRef(ref);
+    return k ? state.docs.filter(function (d) { return normRef(d.reference) === k; }) : [];
+  }
+
+  function loadDocs() {
+    return call('listDocs').then(function (list) {
+      state.docs = list || [];
+      state.docsLoaded = true;
+      renderDocs();
+      renderFormDocs();
+      if (!$('viewMachine').classList.contains('hidden')) renderMachine();
+    }).catch(function (e) {
+      state.docsLoaded = true;
+      $('dList').innerHTML = '<div class="empty">Impossible de charger la documentation.<br>' + esc(errMsg(e)) + '</div>';
+    });
+  }
+
+  function renderDocs() {
+    if (!state.docsLoaded) return;
+    var q = $('dSearch').value.trim().toLowerCase();
+    var all = machines();
+    var rows = all.filter(function (m) {
+      if (!q) return true;
+      return [m.marque, m.reference, m.appareil].concat(m.docs.map(function (d) { return d.categorie + ' ' + d.titre; }))
+        .join(' ').toLowerCase().indexOf(q) !== -1;
+    });
+    $('dList').innerHTML = rows.length ? rows.map(function (m) {
+      return '<div class="item" data-mkey="' + esc(m.key) + '">' +
+        '<div><div class="who">' + esc(machineLabel(m)) + '</div>' +
+        '<div class="meta">' + esc([m.appareil, plural(m.docs.length, 'document'), plural(m.interventions.length, 'intervention')]
+          .filter(Boolean).join(' · ')) + '</div></div>' +
+        '<div class="right">' + (m.docs.length ? '<span class="badge ok">' + m.docs.length + ' doc.</span>'
+          : '<span class="badge wip">Aucun doc.</span>') + '</div></div>';
+    }).join('') : '<div class="empty">' + (all.length ? 'Aucun appareil ne correspond.'
+      : 'Aucun appareil pour le moment.<br>Un appareil apparaît dès qu\'une référence est saisie dans une fiche, ou avec « + Document ».') + '</div>';
+  }
+
+  function docTile(d) {
+    var src = state.docCache[fileIdOf(d.fichier)];
+    var inner = d.format === 'image'
+      ? (src ? '<img src="' + src + '" alt="">' : '<span class="wait">Chargement…</span>')
+      : '<span class="pdf">PDF</span>';
+    return '<div class="ph doc-tile" data-did="' + esc(d.id) + '">' + inner +
+      '<div class="cap">' + esc(d.categorie + (d.titre ? ' · ' + d.titre : '')) + '</div></div>';
+  }
+  function docGrid(docs, empty) {
+    loadThumbs(docs);
+    return docs.length ? '<div class="photos">' + docs.map(docTile).join('') + '</div>' : '<div class="hint">' + empty + '</div>';
+  }
+
+  var fetchingDocs = {};
+  function loadThumbs(docs) {
+    docs.forEach(function (d) {
+      var id = fileIdOf(d.fichier);
+      if (d.format !== 'image' || !id || state.docCache[id] || fetchingDocs[id]) return;
+      fetchingDocs[id] = true;
+      call('getDocData', id).then(function (url) {
+        state.docCache[id] = url;
+        refreshDocViews();
+      }).catch(function () { /* vignette indisponible */ }).finally(function () { delete fetchingDocs[id]; });
+    });
+  }
+  function refreshDocViews() {
+    if (!$('viewMachine').classList.contains('hidden')) renderMachine();
+    if (!$('viewForm').classList.contains('hidden')) renderFormDocs();
+    if (!$('viewDoc').classList.contains('hidden')) renderDocPreview();
+  }
+
+  /** Carte « Documentation technique » de la fiche d'intervention. */
+  function renderFormDocs() {
+    var ref = $('reference').value.trim();
+    $('formDocs').innerHTML = ref ? docGrid(docsOf(ref), 'Aucun document pour cet appareil.') : '';
+    $('btnFormAddDoc').disabled = !ref;
+    $('btnFormMachine').disabled = !ref;
+  }
+  function formMachinePreset() {
+    return { reference: $('reference').value.trim(), marque: choiceValue('marque'), appareil: choiceValue('appareil') };
+  }
+
+  // ---- Fiche appareil ----
+  function openMachine(key, preset, returnTo) {
+    state.machineKey = key;
+    state.machinePreset = preset || null;
+    state.mReturn = returnTo || 'docs';
+    renderMachine();
+    show('viewMachine');
+  }
+  function currentMachine() {
+    var m = machines().filter(function (x) { return x.key === state.machineKey; })[0];
+    return m || Object.assign({ key: state.machineKey, reference: state.machineKey, marque: '', appareil: '', docs: [], interventions: [] },
+      state.machinePreset || {});
+  }
+  function renderMachine() {
+    var m = currentMachine();
+    $('mTitle').textContent = machineLabel(m) || m.reference;
+    $('mSub').textContent = m.appareil || '';
+    $('mDocs').innerHTML = docGrid(m.docs, 'Aucun document pour cet appareil.');
+    $('mLinks').innerHTML = docLinksHtml(m.marque, m.reference, m.appareil);
+    $('mInterventions').innerHTML = m.interventions.length ? m.interventions.map(function (it) {
+      var date = it.dateIntervention || it.dateDiagnostic;
+      return '<div class="item" data-iid="' + esc(it.id) + '"><div><div class="who">' + esc((it.nom + ' ' + it.prenom).trim()) + '</div>' +
+        '<div class="meta">' + esc([it.id, date ? frDate(date) : '', it.panne].filter(Boolean).join(' · ')) + '</div></div>' +
+        '<div class="right"><span class="badge ' + (it.termine ? 'ok">Terminé' : 'wip">En cours') + '</span></div></div>';
+    }).join('') : '<div class="hint">Aucune intervention sur cet appareil.</div>';
+  }
+  function closeMachine() {
+    if (state.mReturn === 'form') { show('viewForm'); renderFormDocs(); }
+    else { show('viewDocs'); renderDocs(); }
+  }
+
+  // ---- Document ----
+  function openDoc(doc, preset, returnTo) {
+    state.doc = doc || null;
+    state.dReturn = returnTo || 'docs';
+    state.dFile = null;
+    var d = doc || preset || {};
+    $('dReference').value = d.reference || '';
+    fillChoice('dMarque', listes('marques'), d.marque);
+    fillChoice('dAppareil', listes('types'), d.appareil);
+    $('dCategorie').innerHTML = CATEGORIES.map(function (c) { return '<option>' + esc(c) + '</option>'; }).join('');
+    $('dCategorie').value = d.categorie || 'Vue éclatée';
+    $('dTitre').value = d.titre || '';
+    $('dTitle').textContent = doc ? 'Document ' + doc.id : 'Nouveau document';
+    $('dPickNew').classList.toggle('hidden', !!doc);
+    $('dPickExisting').classList.toggle('hidden', !doc);
+    $('dOpen').href = (doc && doc.fichier) || '#';
+    $('dFileName').textContent = 'Aucun fichier choisi';
+    $('btnDDelete').classList.toggle('hidden', !doc);
+    $('btnDSave').textContent = doc ? 'Enregistrer' : 'Enregistrer le document';
+    renderDocPreview();
+    show('viewDoc');
+    if (doc && doc.format === 'image') loadThumbs([doc]);
+  }
+  function renderDocPreview() {
+    var src = '';
+    if (state.dFile && state.dFile.image) src = state.dFile.dataUrl;
+    else if (state.doc && state.doc.format === 'image') src = state.docCache[fileIdOf(state.doc.fichier)] || '';
+    $('dPreview').innerHTML = src ? '<img src="' + src + '" alt="">'
+      : (state.doc && state.doc.format === 'image' ? '<p class="hint">Chargement de l\'aperçu…</p>' : '');
+  }
+  function closeDoc(savedRef) {
+    if (state.dReturn === 'form') { show('viewForm'); renderFormDocs(); }
+    else if (state.dReturn === 'machine') {
+      openMachine(savedRef ? normRef(savedRef) : state.machineKey, state.machinePreset, state.mReturn);
+    } else { show('viewDocs'); renderDocs(); }
+  }
+
+  /** Captures et PDF gardés tels quels (lisibilité) ; seules les grosses photos sont réduites. */
+  function readDocFile(file) {
+    var MAX_MB = 20;
+    if (file.size > MAX_MB * 1024 * 1024) return Promise.reject(new Error('Fichier trop volumineux (' + MAX_MB + ' Mo maximum).'));
+    var isImage = file.type ? file.type.indexOf('image/') === 0 : /\.(png|jpe?g|gif|webp|heic)$/i.test(file.name || '');
+    var keep = !isImage || (file.size <= 4 * 1024 * 1024 && /^image\/(png|jpeg|gif|webp)$/.test(file.type));
+    if (!keep) {
+      return compress(file, 2400, 0.9).then(function (dataUrl) {
+        if (!dataUrl) throw new Error('Lecture du fichier impossible.');
+        var jpeg = dataUrl.indexOf('data:image/jpeg') === 0;
+        return { name: jpeg ? (file.name || 'capture').replace(/\.[^.]+$/, '') + '.jpg' : file.name, dataUrl: dataUrl, image: true };
+      });
+    }
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve({ name: file.name || (isImage ? 'capture.png' : 'document.pdf'), dataUrl: r.result, image: isImage }); };
+      r.onerror = function () { reject(new Error('Lecture du fichier impossible.')); };
+      r.readAsDataURL(file);
+    });
+  }
+
+  function saveDocForm() {
+    var ref = $('dReference').value.trim();
+    if (!ref) { toast("La référence de l'appareil est obligatoire.", true); $('dReference').focus(); return; }
+    if (!state.doc && !state.dFile) { toast('Choisissez une capture, une photo ou un PDF.', true); return; }
+    var data = {
+      id: state.doc ? state.doc.id : '',
+      reference: ref,
+      marque: choiceValue('dMarque'),
+      appareil: choiceValue('dAppareil'),
+      categorie: $('dCategorie').value,
+      titre: $('dTitre').value
+    };
+    var file = state.doc ? null : { name: state.dFile.name, dataUrl: state.dFile.dataUrl };
+    $('btnDSave').disabled = true;
+    $('btnDSave').textContent = 'Envoi…';
+    call('saveDoc', data, file).then(function (rec) {
+      if (file && state.dFile.image) state.docCache[fileIdOf(rec.fichier)] = state.dFile.dataUrl;
+      var i = state.docs.findIndex(function (d) { return d.id === rec.id; });
+      if (i >= 0) state.docs[i] = rec; else state.docs.push(rec);
+      toast(state.doc ? 'Document enregistré' : 'Document ajouté');
+      closeDoc(rec.reference);
+    }).catch(function (e) {
+      toast('Erreur : ' + errMsg(e), true);
+    }).finally(function () {
+      $('btnDSave').disabled = false;
+      $('btnDSave').textContent = state.doc ? 'Enregistrer' : 'Enregistrer le document';
+    });
+  }
+
+  function deleteDocForm() {
+    var d = state.doc;
+    if (!d || !confirm('Supprimer ce document ?\nLe fichier part à la corbeille Google Drive (récupérable 30 jours).')) return;
+    call('deleteDoc', d.id).then(function () {
+      state.docs = state.docs.filter(function (x) { return x.id !== d.id; });
+      toast('Document supprimé');
+      closeDoc(d.reference);
+    }).catch(function (e) { toast('Erreur : ' + errMsg(e), true); });
+  }
+
+  // ------------------------------------------------------------------
   // Événements
   // ------------------------------------------------------------------
   $('btnNew').addEventListener('click', function () { openForm(null); });
@@ -1020,6 +1410,10 @@
   $('montantPiece').addEventListener('input', updateMargin);
   $('montantRegle').addEventListener('input', updateMargin);
   $('tempsDiagnostic').addEventListener('change', updateMargin);
+  $('reference').addEventListener('input', renderDocLinks);
+  $('marque').addEventListener('change', renderDocLinks);
+  $('marqueAutre').addEventListener('input', renderDocLinks);
+  $('appareil').addEventListener('change', renderDocLinks);
   $('tempsReparation').addEventListener('change', updateMargin);
   $('search').addEventListener('input', renderList);
   document.querySelectorAll('.chip').forEach(function (c) {
@@ -1062,7 +1456,9 @@
   // Factures
   document.querySelectorAll('.tab').forEach(function (t) {
     t.addEventListener('click', function () {
-      if (t.getAttribute('data-tab') === 'factures') { show('viewFactures'); renderFactures(); }
+      var tab = t.getAttribute('data-tab');
+      if (tab === 'factures') { show('viewFactures'); renderFactures(); }
+      else if (tab === 'docs') { show('viewDocs'); renderDocs(); }
       else showList();
     });
   });
@@ -1098,10 +1494,61 @@
   $('formFactures').addEventListener('click', onFactureClick);
 
   // Listes déroulantes : « Autre… » affiche un champ pour saisir une nouvelle valeur
-  ['appareil', 'marque', 'fFournisseur'].forEach(function (id) {
+  ['appareil', 'marque', 'fFournisseur', 'dMarque', 'dAppareil'].forEach(function (id) {
     $(id).addEventListener('change', function () {
       toggleOther(id);
       if ($(id).value === AUTRE) $(id + 'Autre').focus();
+    });
+  });
+
+  // Documentation
+  $('dSearch').addEventListener('input', renderDocs);
+  $('btnNewDoc').addEventListener('click', function () { openDoc(null, null, 'docs'); });
+  $('dList').addEventListener('click', function (e) {
+    var el = e.target.closest('[data-mkey]');
+    if (el) openMachine(el.getAttribute('data-mkey'), null, 'docs');
+  });
+  $('btnMBack').addEventListener('click', closeMachine);
+  $('btnMAddDoc').addEventListener('click', function () {
+    var m = currentMachine();
+    openDoc(null, { reference: m.reference, marque: m.marque, appareil: m.appareil }, 'machine');
+  });
+  function onDocTileClick(returnTo) {
+    return function (e) {
+      var el = e.target.closest('[data-did]');
+      if (!el) return;
+      var d = state.docs.filter(function (x) { return x.id === el.getAttribute('data-did'); })[0];
+      if (d) openDoc(d, null, returnTo);
+    };
+  }
+  $('mDocs').addEventListener('click', onDocTileClick('machine'));
+  $('formDocs').addEventListener('click', onDocTileClick('form'));
+  $('mInterventions').addEventListener('click', function (e) {
+    var el = e.target.closest('[data-iid]');
+    var it = el && state.items.filter(function (x) { return x.id === el.getAttribute('data-iid'); })[0];
+    if (it) openForm(it);
+  });
+  $('btnFormAddDoc').addEventListener('click', function () { openDoc(null, formMachinePreset(), 'form'); });
+  $('btnFormMachine').addEventListener('click', function () {
+    var p = formMachinePreset();
+    openMachine(normRef(p.reference), p, 'form');
+  });
+  $('btnDBack').addEventListener('click', function () { closeDoc(); });
+  $('docForm').addEventListener('submit', function (e) { e.preventDefault(); saveDocForm(); });
+  $('btnDDelete').addEventListener('click', deleteDocForm);
+  $('dFile').addEventListener('change', function () {
+    var file = this.files && this.files[0];
+    this.value = '';
+    if (!file) return;
+    $('dFileName').textContent = 'Lecture…';
+    readDocFile(file).then(function (r) {
+      state.dFile = r;
+      $('dFileName').textContent = file.name || r.name;
+      renderDocPreview();
+    }).catch(function (e) {
+      state.dFile = null;
+      $('dFileName').textContent = 'Aucun fichier choisi';
+      toast(errMsg(e), true);
     });
   });
 
@@ -1134,7 +1581,7 @@
     if (connectFromHash()) return;
     if (!getCfg()) { showSetup(); return; }
     show('viewList');
-    loadList().then(loadFactures).then(loadListes);
+    loadList().then(loadFactures).then(loadDocs).then(loadListes);
     call('getLinks').then(applyLinks).catch(function () {});
   })();
 </script>

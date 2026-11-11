@@ -11,6 +11,7 @@ const API_SOURCE = fs.readFileSync(path.join(ROOT, 'backend/api.js'), 'utf8');
 const LOADER_SOURCE = fs.readFileSync(path.join(ROOT, 'apps-script/Code.gs'), 'utf8');
 const PHOTOS_ID = '1jgvigMTAK_tkB3WVTiqkmEa93CGMLKQh';
 const FACTURES_ID = '1X2txYHkLIRCRfKAw1SOZR3qR1Egu69X8';
+const DOCS_ID = '1c4z_x9nx9SSiQqPRckfbk4_eWaDmsB30';
 const API_KEY = 'cle-de-test-0123456789abcdef0123456789abcdef0123456789abcdef0123';
 
 function iter(a) { let i = 0; return { hasNext: () => i < a.length, next: () => a[i++] }; }
@@ -85,6 +86,7 @@ function makeEnv(options = {}) {
 
   const photosRoot = mkFolder('Photos interventions', null, PHOTOS_ID);
   const facturesRoot = mkFolder('Factures pièces', null, FACTURES_ID);
+  const docsRoot = mkFolder('Documentation technique', null, DOCS_ID);
   // Titres de la feuille réelle avant l'ajout de la colonne « Marque » (mise à jour automatique testée).
   const sheet = mkSheet(['ID', 'Nom', 'Prénom', 'Téléphone', 'Adresse', 'Appareil', 'Panne / travaux', "Date de l'appel",
     "Date d'intervention", 'Pièce utilisée', 'Montant pièce (€)', 'Montant réglé (€)', 'Terminé', 'Dossier photos',
@@ -169,7 +171,7 @@ function makeEnv(options = {}) {
     return res.data;
   }
 
-  return { ctx, post, api, mails, items, extraSheets, rows: sheet._rows, frows: fsheet._rows, photosRoot, facturesRoot, props, fetches, cacheStore };
+  return { ctx, post, api, mails, items, extraSheets, rows: sheet._rows, frows: fsheet._rows, photosRoot, facturesRoot, docsRoot, props, fetches, cacheStore };
 }
 
 module.exports = { makeEnv, API_KEY };

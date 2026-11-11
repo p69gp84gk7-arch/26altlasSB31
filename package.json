@@ -1,0 +1,12 @@
+{
+  "name": "depannages-fichier-clients",
+  "private": true,
+  "description": "Fichier clients pour les dépannages électroménager (GitHub Pages + Google Apps Script)",
+  "scripts": {
+    "test": "node --test tests/backend.test.js",
+    "test:web": "node --test tests/web.test.js"
+  },
+  "devDependencies": {
+    "playwright": "1.63.0"
+  }
+}

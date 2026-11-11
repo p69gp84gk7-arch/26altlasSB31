@@ -4,20 +4,26 @@
  * Application web Google Apps Script :
  *  - les fiches d'intervention sont stockées dans la feuille Google Sheets « Interventions » ;
  *  - les photos sont rangées dans Google Drive, un sous-dossier par intervention,
- *    à l'intérieur du dossier « Photos interventions ».
+ *    à l'intérieur du dossier « Photos interventions » ;
+ *  - les factures des pièces commandées sont archivées dans le dossier Drive
+ *    « Factures pièces » (un sous-dossier par année) et listées dans l'onglet « Factures ».
  *
  * Voir README.md pour l'installation.
  */
 
 // ---------------------------------------------------------------------------
-// Configuration : identifiants de la feuille et du dossier photos dans Drive.
+// Configuration : identifiants de la feuille et des dossiers dans Drive.
 // (créés dans le dossier Drive « Dépannages électroménager »)
 // ---------------------------------------------------------------------------
 var CONFIG = {
   SPREADSHEET_ID: '1n6WC_Ik14bE6ZwapDIAAXgPPw8xaqzCUeX0QENBxons',
   PHOTOS_FOLDER_ID: '1jgvigMTAK_tkB3WVTiqkmEa93CGMLKQh',
+  FACTURES_FOLDER_ID: '1X2txYHkLIRCRfKAw1SOZR3qR1Egu69X8',
   SHEET_NAME: 'Interventions',
-  ID_PREFIX: 'INT-'
+  FACTURES_SHEET_NAME: 'Factures',
+  ID_PREFIX: 'INT-',
+  FACTURE_PREFIX: 'FAC-',
+  MAX_FILE_MB: 20
 };
 
 // Ordre des colonnes A → P de la feuille « Interventions ».
@@ -43,6 +49,23 @@ var COLUMNS = [
 var COL = {};
 COLUMNS.forEach(function (name, i) { COL[name] = i; });
 var NB_COLS = COLUMNS.length;
+
+// Ordre des colonnes A → J de l'onglet « Factures ».
+var FAC_COLUMNS = [
+  'id',           // A  ID
+  'date',         // B  Date facture
+  'fournisseur',  // C  Fournisseur
+  'numero',       // D  N° facture
+  'piece',        // E  Pièce
+  'montant',      // F  Montant (€)
+  'intervention', // G  Intervention (ID INT-xxxx, vide = stock)
+  'client',       // H  Client (nom de l'intervention liée)
+  'fichier',      // I  Fichier (lien Drive)
+  'ajouteeLe'     // J  Ajoutée le
+];
+var FCOL = {};
+FAC_COLUMNS.forEach(function (name, i) { FCOL[name] = i; });
+var NB_FAC_COLS = FAC_COLUMNS.length;
 
 // ---------------------------------------------------------------------------
 // Point d'entrée de l'application web
@@ -236,8 +259,127 @@ function deletePhoto(fileId) {
 function getLinks() {
   return {
     sheetUrl: SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID).getUrl(),
-    photosUrl: DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID).getUrl()
+    photosUrl: DriveApp.getFolderById(CONFIG.PHOTOS_FOLDER_ID).getUrl(),
+    facturesUrl: DriveApp.getFolderById(CONFIG.FACTURES_FOLDER_ID).getUrl()
   };
+}
+
+// ---------------------------------------------------------------------------
+// Factures des pièces commandées
+// ---------------------------------------------------------------------------
+
+/** Renvoie toutes les factures archivées, la plus récente en premier. */
+function listFactures() {
+  var sh = getSheet_(CONFIG.FACTURES_SHEET_NAME);
+  var last = lastDataRow_(sh);
+  if (last < 2) return [];
+  var tz = getTimeZone_();
+  var out = [];
+  sh.getRange(2, 1, last - 1, NB_FAC_COLS).getValues().forEach(function (row) {
+    if (String(row[FCOL.id]).trim() !== '') out.push(factureToRecord_(row, tz));
+  });
+  out.sort(function (a, b) {
+    return String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id));
+  });
+  return out;
+}
+
+/**
+ * Archive une nouvelle facture ou met à jour ses informations.
+ * Le fichier est rangé dans « Factures pièces/<année> » et renommé
+ * « date_fournisseur_numéro_ID » pour être retrouvé facilement dans Drive.
+ * @param {Object} data informations (id vide = nouvelle facture)
+ * @param {Object=} file {name, dataUrl} obligatoire pour une nouvelle facture
+ */
+function saveFacture(data, file) {
+  data = data || {};
+  var date = parseDate_(data.date);
+  if (!date) throw new Error('La date de la facture est obligatoire.');
+  var montant = parseAmount_(data.montant);
+
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = getSheet_(CONFIG.FACTURES_SHEET_NAME);
+    var tz = getTimeZone_();
+    var rowIndex = data.id ? findRow_(sh, data.id) : -1;
+    if (data.id && rowIndex < 0) throw new Error('Facture introuvable : ' + data.id);
+    var existing = rowIndex > 0 ? sh.getRange(rowIndex, 1, 1, NB_FAC_COLS).getValues()[0] : null;
+    if (!existing) {
+      if (!file || !file.dataUrl) throw new Error('Ajoutez le fichier de la facture (PDF ou photo).');
+      rowIndex = lastDataRow_(sh) + 1;
+    }
+
+    // Intervention liée (facultative : pièce commandée pour le stock).
+    var interventionId = clean_(data.intervention);
+    var client = '';
+    if (interventionId) {
+      var ish = getSheet_();
+      var irow = findRow_(ish, interventionId);
+      if (irow < 0) throw new Error('Intervention introuvable : ' + interventionId);
+      var iv = ish.getRange(irow, 1, 1, NB_COLS).getValues()[0];
+      client = [iv[COL.nom], iv[COL.prenom]].join(' ').trim();
+    }
+
+    var row = new Array(NB_FAC_COLS);
+    row[FCOL.id] = existing ? existing[FCOL.id] : nextId_(sh, CONFIG.FACTURE_PREFIX);
+    row[FCOL.date] = date;
+    row[FCOL.fournisseur] = clean_(data.fournisseur);
+    row[FCOL.numero] = clean_(data.numero);
+    row[FCOL.piece] = clean_(data.piece);
+    row[FCOL.montant] = montant;
+    row[FCOL.intervention] = interventionId;
+    row[FCOL.client] = client;
+    row[FCOL.fichier] = existing ? existing[FCOL.fichier] : '';
+    row[FCOL.ajouteeLe] = existing ? existing[FCOL.ajouteeLe] : new Date();
+
+    var yearFolder = getYearFolder_(date, tz);
+    var baseName = factureFileName_(row, tz);
+    if (existing) {
+      // Renomme / déplace le fichier si la date, le fournisseur ou le numéro ont changé.
+      var f = factureFileFromUrl_(row[FCOL.fichier]);
+      if (f) {
+        var ext = extension_(f.getName(), f.getMimeType());
+        if (f.getName() !== baseName + ext) f.setName(baseName + ext);
+        var inYear = false, parents = f.getParents();
+        while (parents.hasNext()) { if (parents.next().getId() === yearFolder.getId()) inYear = true; }
+        if (!inYear) f.moveTo(yearFolder);
+      }
+    } else {
+      var blob = dataUrlToBlob_(file.dataUrl, baseName);
+      var mime = blob.getContentType();
+      if (mime !== 'application/pdf' && mime.indexOf('image/') !== 0) {
+        throw new Error('Format non accepté : PDF ou image uniquement.');
+      }
+      blob.setName(baseName + extension_(file.name, mime));
+      row[FCOL.fichier] = yearFolder.createFile(blob).getUrl();
+    }
+
+    sh.getRange(rowIndex, FCOL.numero + 1).setNumberFormat('@');
+    sh.getRange(rowIndex, 1, 1, NB_FAC_COLS).setValues([row]);
+    SpreadsheetApp.flush();
+    return factureToRecord_(row, tz);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Supprime une facture : la ligne est retirée et le fichier part à la corbeille Drive (30 jours). */
+function deleteFacture(id) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = getSheet_(CONFIG.FACTURES_SHEET_NAME);
+    var rowIndex = findRow_(sh, id);
+    if (rowIndex < 0) throw new Error('Facture introuvable : ' + id);
+    var url = sh.getRange(rowIndex, FCOL.fichier + 1).getValue();
+    var f = factureFileFromUrl_(url);
+    if (f) f.setTrashed(true);
+    sh.deleteRow(rowIndex);
+    return true;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -248,9 +390,10 @@ function getSpreadsheet_() {
   return SpreadsheetApp.openById(CONFIG.SPREADSHEET_ID);
 }
 
-function getSheet_() {
-  var sh = getSpreadsheet_().getSheetByName(CONFIG.SHEET_NAME);
-  if (!sh) throw new Error('Onglet « ' + CONFIG.SHEET_NAME + ' » introuvable dans la feuille.');
+function getSheet_(name) {
+  name = name || CONFIG.SHEET_NAME;
+  var sh = getSpreadsheet_().getSheetByName(name);
+  if (!sh) throw new Error('Onglet « ' + name + ' » introuvable dans la feuille.');
   return sh;
 }
 
@@ -279,7 +422,7 @@ function findRow_(sh, id) {
   return -1;
 }
 
-function nextId_(sh) {
+function nextId_(sh, prefix) {
   var last = lastDataRow_(sh);
   var max = 0;
   if (last >= 2) {
@@ -288,24 +431,38 @@ function nextId_(sh) {
       if (m) max = Math.max(max, parseInt(m[1], 10));
     });
   }
-  return CONFIG.ID_PREFIX + ('0000' + (max + 1)).slice(-4);
+  return (prefix || CONFIG.ID_PREFIX) + ('0000' + (max + 1)).slice(-4);
 }
 
 function toRecord_(row, tz) {
+  var rec = rowToObject_(COLUMNS, row, tz);
+  rec.id = String(rec.id);
+  rec.telephone = String(rec.telephone);
+  rec.termine = rec.termine === true;
+  return rec;
+}
+
+function factureToRecord_(row, tz) {
+  var rec = rowToObject_(FAC_COLUMNS, row, tz);
+  rec.id = String(rec.id);
+  rec.numero = String(rec.numero);
+  rec.intervention = String(rec.intervention);
+  return rec;
+}
+
+/** Ligne de feuille → objet ; les dates deviennent du texte (google.script.run ne transmet pas les Date). */
+function rowToObject_(columns, row, tz) {
   var rec = {};
-  COLUMNS.forEach(function (name, i) {
+  columns.forEach(function (name, i) {
     var v = row[i];
     if (v instanceof Date) {
-      var fmt = (name === 'creeLe' || name === 'modifieLe') ? 'dd/MM/yyyy HH:mm' : 'yyyy-MM-dd';
+      var fmt = /(Le)$/.test(name) ? 'dd/MM/yyyy HH:mm' : 'yyyy-MM-dd';
       v = Utilities.formatDate(v, tz, fmt);
     } else if (v === null || v === undefined) {
       v = '';
     }
     rec[name] = v;
   });
-  rec.id = String(rec.id);
-  rec.telephone = String(rec.telephone);
-  rec.termine = rec.termine === true;
   return rec;
 }
 
@@ -382,4 +539,68 @@ function checkPhoto_(fileId) {
     }
   }
   throw new Error("Cette photo n'appartient pas au dossier des interventions.");
+}
+
+/** Sous-dossier de l'année dans « Factures pièces » (créé si besoin). */
+function getYearFolder_(date, tz) {
+  var year = Utilities.formatDate(date, tz, 'yyyy');
+  var root = DriveApp.getFolderById(CONFIG.FACTURES_FOLDER_ID);
+  var it = root.getFoldersByName(year);
+  while (it.hasNext()) {
+    var f = it.next();
+    if (!f.isTrashed()) return f;
+  }
+  return root.createFolder(year);
+}
+
+/** Ex. « 2026-11-12_Pieces-Express_FA-1234_FAC-0007 » */
+function factureFileName_(row, tz) {
+  var parts = [
+    Utilities.formatDate(row[FCOL.date], tz, 'yyyy-MM-dd'),
+    row[FCOL.fournisseur],
+    row[FCOL.numero],
+    row[FCOL.id]
+  ].filter(function (x) { return String(x).trim() !== ''; });
+  return parts.join('_').replace(/[\\/:*?"<>|]/g, '-').replace(/\s+/g, '-');
+}
+
+function extension_(name, mime) {
+  var m = /(\.[A-Za-z0-9]{2,5})$/.exec(String(name || ''));
+  if (m) return m[1].toLowerCase();
+  if (mime === 'application/pdf') return '.pdf';
+  if (mime === 'image/png') return '.png';
+  if (mime === 'image/heic') return '.heic';
+  return '.jpg';
+}
+
+function dataUrlToBlob_(dataUrl, name) {
+  var m = /^data:([^;]+);base64,(.*)$/.exec(dataUrl || '');
+  if (!m) throw new Error('Fichier invalide.');
+  var bytes = Utilities.base64Decode(m[2]);
+  if (bytes.length > CONFIG.MAX_FILE_MB * 1024 * 1024) {
+    throw new Error('Fichier trop volumineux (' + CONFIG.MAX_FILE_MB + ' Mo maximum).');
+  }
+  return Utilities.newBlob(bytes, m[1], name);
+}
+
+/** Fichier de facture à partir de son lien, uniquement s'il est rangé dans « Factures pièces ». */
+function factureFileFromUrl_(url) {
+  var m = /\/d\/([\w-]+)/.exec(String(url || ''));
+  if (!m) return null;
+  try {
+    var f = DriveApp.getFileById(m[1]);
+    if (f.isTrashed()) return null;
+    var parents = f.getParents();
+    while (parents.hasNext()) {
+      var p = parents.next();
+      if (p.getId() === CONFIG.FACTURES_FOLDER_ID) return f;
+      var gp = p.getParents();
+      while (gp.hasNext()) {
+        if (gp.next().getId() === CONFIG.FACTURES_FOLDER_ID) return f;
+      }
+    }
+  } catch (e) {
+    // fichier supprimé ou inaccessible
+  }
+  return null;
 }

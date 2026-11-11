@@ -31,6 +31,16 @@
     header .wrap { display: flex; align-items: center; gap: 12px; padding-top: 12px; padding-bottom: 12px; }
     header h1 { font-size: 18px; margin: 0; flex: 1; font-weight: 600; }
     header a { color: #fff; font-size: 14px; opacity: .85; }
+    .tabs { display: flex; gap: 4px; padding-bottom: 0 !important; padding-top: 0 !important; }
+    .tab { background: transparent; border: 0; color: rgba(255,255,255,.75); padding: 10px 14px; cursor: pointer;
+      font-weight: 600; border-bottom: 3px solid transparent; }
+    .tab.on { color: #fff; border-bottom-color: #fff; }
+    .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+    .file-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .file-pick .name { font-size: 14px; color: var(--muted); word-break: break-all; }
+    .mini { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .mini .item { padding: 10px 12px; }
+    .item a.open { font-size: 14px; color: var(--primary); }
 
     .btn { border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600;
       background: var(--primary); color: #fff; }
@@ -114,6 +124,10 @@
       <a id="lnkSheet" href="#" target="_blank" class="hidden">Feuille</a>
       <button class="btn light" id="btnNew">+ Nouvelle</button>
     </div>
+    <div class="wrap tabs">
+      <button class="tab on" data-tab="list">Interventions</button>
+      <button class="tab" data-tab="factures">Factures pièces</button>
+    </div>
   </header>
 
   <!-- ============ LISTE ============ -->
@@ -182,6 +196,12 @@
     </form>
 
     <div class="card">
+      <h2>Factures des pièces</h2>
+      <div class="mini" id="formFactures"></div>
+      <button type="button" class="btn" id="btnAddFacture">+ Ajouter une facture</button>
+    </div>
+
+    <div class="card">
       <h2>Photos</h2>
       <div class="photo-bar">
         <button type="button" class="btn" id="btnAddPhoto">+ Ajouter des photos</button>
@@ -191,6 +211,61 @@
       <div class="photos" id="photos"></div>
       <p class="hint" id="photoHint">Les photos sont enregistrées dans Google Drive, dans le dossier de l'intervention.</p>
     </div>
+  </div>
+
+  <!-- ============ LISTE DES FACTURES ============ -->
+  <div class="wrap hidden" id="viewFactures">
+    <div class="stats">
+      <div class="stat"><b id="fsCount">–</b><span>Factures</span></div>
+      <div class="stat"><b id="fsTotal">–</b><span id="fsTotalLabel">Total</span></div>
+      <div class="stat"><b id="fsStock">–</b><span>Pour le stock</span></div>
+      <div class="stat"><b id="fsMissing">–</b><span>Sans montant</span></div>
+    </div>
+    <div class="toolbar">
+      <input id="fSearch" type="search" placeholder="Rechercher un fournisseur, une pièce…">
+      <select id="fYear" class="chip"></select>
+      <button class="btn" id="btnNewFacture">+ Facture</button>
+    </div>
+    <div class="list" id="fList"><div class="loading">Chargement…</div></div>
+    <p class="hint">Les fichiers sont archivés dans Google Drive, dossier « Factures pièces », rangés par année.
+      <a id="lnkFactures" href="#" target="_blank" class="hidden">Ouvrir le dossier</a></p>
+  </div>
+
+  <!-- ============ FICHE FACTURE ============ -->
+  <div class="wrap hidden" id="viewFacture">
+    <div class="topline">
+      <button class="btn ghost" id="btnFBack">‹ Retour</button>
+      <h2 id="fTitle">Nouvelle facture</h2>
+    </div>
+    <form id="fForm" autocomplete="off">
+      <div class="card">
+        <h2>Fichier de la facture</h2>
+        <div class="file-pick" id="fPickNew">
+          <button type="button" class="btn" id="btnPickFile">Choisir un PDF ou une photo</button>
+          <input type="file" id="fFile" accept="application/pdf,image/*" class="hidden">
+          <span class="name" id="fFileName">Aucun fichier choisi</span>
+        </div>
+        <div class="file-pick hidden" id="fPickExisting">
+          <a id="fOpen" href="#" target="_blank" class="btn ghost">Ouvrir la facture</a>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Informations</h2>
+        <div class="grid">
+          <div class="field"><label for="fDate">Date de la facture *</label><input id="fDate" type="date" required></div>
+          <div class="field"><label for="fFournisseur">Fournisseur</label><input id="fFournisseur" placeholder="Ex. Pièces Express"></div>
+          <div class="field"><label for="fNumero">N° de facture</label><input id="fNumero"></div>
+          <div class="field"><label for="fMontant">Montant (€)</label><input id="fMontant" inputmode="decimal" placeholder="0,00"></div>
+          <div class="field full"><label for="fPiece">Pièce(s) commandée(s)</label><input id="fPiece"></div>
+          <div class="field full"><label for="fIntervention">Intervention liée</label><select id="fIntervention"></select></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="submit" class="btn" id="btnFSave">Archiver la facture</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn danger hidden" id="btnFDelete">Supprimer</button>
+      </div>
+    </form>
   </div>
 
   <!-- ============ VISIONNEUSE ============ -->
@@ -218,8 +293,20 @@
     photos: [],
     photoCache: {},     // id photo -> data URL
     lbIndex: -1,
-    busy: false
+    busy: false,
+    factures: [],
+    facturesLoaded: false,
+    facture: null,      // facture ouverte (null = nouvelle)
+    fReturn: 'factures',// vue à afficher après la fiche facture
+    fFile: null         // fichier choisi {name, dataUrl}
   };
+  var VIEWS = ['viewList', 'viewForm', 'viewFactures', 'viewFacture'];
+  function show(view) {
+    VIEWS.forEach(function (v) { $(v).classList.toggle('hidden', v !== view); });
+    var tab = (view === 'viewFactures' || (view === 'viewFacture' && state.fReturn === 'factures')) ? 'factures' : 'list';
+    document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('on', t.getAttribute('data-tab') === tab); });
+    window.scrollTo(0, 0);
+  }
   var FIELDS = ['nom', 'prenom', 'telephone', 'adresse', 'dateAppel', 'dateIntervention',
                 'appareil', 'piece', 'panne', 'montantPiece', 'montantRegle'];
 
@@ -330,9 +417,7 @@
   // Fiche
   // ------------------------------------------------------------------
   function showList() {
-    $('viewForm').classList.add('hidden');
-    $('viewList').classList.remove('hidden');
-    window.scrollTo(0, 0);
+    show('viewList');
     renderList();
   }
 
@@ -349,9 +434,8 @@
     $('formTitle').textContent = item ? ((item.nom + ' ' + item.prenom).trim() + ' · ' + item.id) : 'Nouvelle intervention';
     $('btnDelete').classList.toggle('hidden', !item);
     updateMargin();
-    $('viewList').classList.add('hidden');
-    $('viewForm').classList.remove('hidden');
-    window.scrollTo(0, 0);
+    show('viewForm');
+    renderFormFactures();
     renderPhotos();
     if (item) loadPhotos();
     if (!item) $('nom').focus();
@@ -461,19 +545,19 @@
   }
 
   /** Réduit l'image (côté téléphone) avant l'envoi : 1600 px max, JPEG. */
-  function compress(file) {
+  function compress(file, maxSize, quality) {
     return new Promise(function (resolve) {
       var reader = new FileReader();
       reader.onload = function () {
         var original = reader.result;
         var img = new Image();
         img.onload = function () {
-          var max = 1600, w = img.naturalWidth, h = img.naturalHeight;
+          var max = maxSize || 1600, w = img.naturalWidth, h = img.naturalHeight;
           var scale = Math.min(1, max / Math.max(w, h));
           var c = document.createElement('canvas');
           c.width = Math.round(w * scale); c.height = Math.round(h * scale);
           c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
-          try { resolve(c.toDataURL('image/jpeg', 0.82)); } catch (e) { resolve(original); }
+          try { resolve(c.toDataURL('image/jpeg', quality || 0.82)); } catch (e) { resolve(original); }
         };
         img.onerror = function () { resolve(original); };
         img.src = original;
@@ -547,6 +631,185 @@
     }).catch(function (e) { toast('Erreur : ' + errMsg(e), true); });
   }
 
+
+  // ------------------------------------------------------------------
+  // Factures des pièces
+  // ------------------------------------------------------------------
+  function loadFactures() {
+    return call('listFactures').then(function (list) {
+      state.factures = list || [];
+      state.facturesLoaded = true;
+      renderFactures();
+      renderFormFactures();
+    }).catch(function (e) {
+      $('fList').innerHTML = '<div class="empty">Impossible de charger les factures.<br>' + esc(errMsg(e)) + '</div>';
+    });
+  }
+
+  function clientOf(f) {
+    var it = f.intervention && state.items.find(function (x) { return x.id === f.intervention; });
+    return it ? (it.nom + ' ' + it.prenom).trim() : (f.client || '');
+  }
+
+  function factureItem(f) {
+    var title = [f.fournisseur || 'Fournisseur non renseigné', f.numero ? 'n° ' + f.numero : ''].filter(Boolean).join(' · ');
+    var link = f.intervention ? f.intervention + (clientOf(f) ? ' · ' + clientOf(f) : '') : 'Stock';
+    return '<div class="item" data-fid="' + esc(f.id) + '">' +
+      '<div><div class="who">' + esc(title) + '</div>' +
+      '<div class="meta">' + esc(f.piece || '—') + '</div>' +
+      '<div class="meta">' + esc(f.id + ' · ' + frDate(f.date) + ' · ' + link) + '</div></div>' +
+      '<div class="right"><b>' + (f.montant !== '' ? esc(euro(num(f.montant))) : '—') + '</b>' +
+      (f.fichier ? '<div style="margin-top:6px"><a class="open" href="' + esc(f.fichier) + '" target="_blank">Ouvrir</a></div>' : '') +
+      '</div></div>';
+  }
+
+  function renderFactures() {
+    // Années disponibles
+    var years = {};
+    state.factures.forEach(function (f) { if (f.date) years[String(f.date).slice(0, 4)] = true; });
+    var list = Object.keys(years).sort().reverse();
+    var sel = $('fYear'), cur = sel.value;
+    sel.innerHTML = '<option value="">Toutes les années</option>' +
+      list.map(function (y) { return '<option value="' + y + '">' + y + '</option>'; }).join('');
+    sel.value = list.indexOf(cur) >= 0 ? cur : '';
+
+    var y = sel.value, q = $('fSearch').value.trim().toLowerCase();
+    var rows = state.factures.filter(function (f) {
+      if (y && String(f.date).slice(0, 4) !== y) return false;
+      if (!q) return true;
+      return [f.id, f.fournisseur, f.numero, f.piece, f.intervention, clientOf(f)].join(' ').toLowerCase().indexOf(q) !== -1;
+    });
+    var total = 0, stock = 0, missing = 0;
+    rows.forEach(function (f) {
+      total += num(f.montant);
+      if (!f.intervention) stock++;
+      if (f.montant === '') missing++;
+    });
+    $('fsCount').textContent = rows.length;
+    $('fsTotal').textContent = euro(total);
+    $('fsTotalLabel').textContent = y ? 'Total ' + y : 'Total';
+    $('fsStock').textContent = stock;
+    $('fsMissing').textContent = missing;
+    if (!state.facturesLoaded) return;
+    $('fList').innerHTML = rows.length ? rows.map(factureItem).join('')
+      : '<div class="empty">' + (state.factures.length ? 'Aucune facture ne correspond.'
+        : 'Aucune facture archivée.<br>Appuyez sur « + Facture » pour en ajouter une.') + '</div>';
+  }
+
+  /** Factures liées à l'intervention ouverte. */
+  function renderFormFactures() {
+    var id = state.current && state.current.id;
+    var rows = id ? state.factures.filter(function (f) { return f.intervention === id; }) : [];
+    var total = rows.reduce(function (s, f) { return s + num(f.montant); }, 0);
+    $('formFactures').innerHTML = rows.length
+      ? rows.map(factureItem).join('') + '<div class="total">Total des factures : ' + esc(euro(total)) + '</div>'
+      : '<div class="hint">' + (id ? 'Aucune facture liée.' : 'La fiche sera enregistrée automatiquement avant l\'ajout d\'une facture.') + '</div>';
+  }
+
+  function fillInterventionSelect(selected) {
+    var opts = '<option value="">— Aucune (pièce pour le stock) —</option>' +
+      state.items.map(function (it) {
+        return '<option value="' + esc(it.id) + '">' + esc(it.id + ' · ' + (it.nom + ' ' + it.prenom).trim() +
+          (it.appareil ? ' · ' + it.appareil : '')) + '</option>';
+      }).join('');
+    $('fIntervention').innerHTML = opts;
+    $('fIntervention').value = selected || '';
+  }
+
+  function openFacture(f, preset, returnTo) {
+    state.facture = f || null;
+    state.fReturn = returnTo || 'factures';
+    state.fFile = null;
+    var d = f || Object.assign({ date: today() }, preset || {});
+    $('fDate').value = d.date || '';
+    $('fFournisseur').value = d.fournisseur || '';
+    $('fNumero').value = d.numero || '';
+    $('fMontant').value = amountToInput(d.montant);
+    $('fPiece').value = d.piece || '';
+    fillInterventionSelect(d.intervention);
+    $('fTitle').textContent = f ? 'Facture ' + f.id : 'Nouvelle facture';
+    $('fPickNew').classList.toggle('hidden', !!f);
+    $('fPickExisting').classList.toggle('hidden', !f);
+    $('fOpen').href = (f && f.fichier) || '#';
+    $('fFileName').textContent = 'Aucun fichier choisi';
+    $('btnFDelete').classList.toggle('hidden', !f);
+    $('btnFSave').textContent = f ? 'Enregistrer' : 'Archiver la facture';
+    show('viewFacture');
+  }
+
+  function closeFacture() {
+    if (state.fReturn === 'form') { show('viewForm'); renderFormFactures(); }
+    else { show('viewFactures'); renderFactures(); }
+  }
+
+  function readFile(file) {
+    var MAX_MB = 20;
+    if (file.size > MAX_MB * 1024 * 1024) return Promise.reject(new Error('Fichier trop volumineux (' + MAX_MB + ' Mo maximum).'));
+    if (file.type && file.type.indexOf('image/') === 0) {
+      // Photo de facture : réduite à 2000 px, gardée lisible.
+      return compress(file, 2000, 0.85).then(function (dataUrl) {
+        if (!dataUrl) throw new Error('Lecture du fichier impossible.');
+        var jpeg = dataUrl.indexOf('data:image/jpeg') === 0;
+        return { name: jpeg ? (file.name || 'facture').replace(/\.[^.]+$/, '') + '.jpg' : file.name, dataUrl: dataUrl };
+      });
+    }
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve({ name: file.name || 'facture.pdf', dataUrl: r.result }); };
+      r.onerror = function () { reject(new Error('Lecture du fichier impossible.')); };
+      r.readAsDataURL(file);
+    });
+  }
+
+  function saveFactureForm() {
+    if (!$('fDate').value) { toast('La date de la facture est obligatoire.', true); return; }
+    if (!state.facture && !state.fFile) { toast('Choisissez le fichier de la facture (PDF ou photo).', true); return; }
+    var data = {
+      id: state.facture ? state.facture.id : '',
+      date: $('fDate').value,
+      fournisseur: $('fFournisseur').value,
+      numero: $('fNumero').value,
+      montant: $('fMontant').value,
+      piece: $('fPiece').value,
+      intervention: $('fIntervention').value
+    };
+    $('btnFSave').disabled = true;
+    $('btnFSave').textContent = 'Envoi…';
+    call('saveFacture', data, state.facture ? null : state.fFile).then(function (rec) {
+      var i = state.factures.findIndex(function (f) { return f.id === rec.id; });
+      if (i >= 0) state.factures[i] = rec; else state.factures.unshift(rec);
+      state.factures.sort(function (a, b) { return String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id)); });
+      toast(state.facture ? 'Facture enregistrée' : 'Facture archivée');
+      closeFacture();
+    }).catch(function (e) {
+      toast('Erreur : ' + errMsg(e), true);
+    }).finally(function () {
+      $('btnFSave').disabled = false;
+      $('btnFSave').textContent = state.facture ? 'Enregistrer' : 'Archiver la facture';
+    });
+  }
+
+  function deleteFactureForm() {
+    var f = state.facture;
+    if (!f || !confirm('Supprimer la facture ' + f.id + ' ?\nLe fichier part à la corbeille Google Drive (récupérable 30 jours).')) return;
+    call('deleteFacture', f.id).then(function () {
+      state.factures = state.factures.filter(function (x) { return x.id !== f.id; });
+      toast('Facture supprimée');
+      closeFacture();
+    }).catch(function (e) { toast('Erreur : ' + errMsg(e), true); });
+  }
+
+  function addFactureFromForm() {
+    var ready = (state.current && state.current.id) ? Promise.resolve() : save(true);
+    ready.then(function () {
+      openFacture(null, {
+        intervention: state.current.id,
+        piece: $('piece').value,
+        montant: $('montantPiece').value
+      }, 'form');
+    }).catch(function () {});
+  }
+
   // ------------------------------------------------------------------
   // Événements
   // ------------------------------------------------------------------
@@ -595,11 +858,52 @@
     if (e.key === 'ArrowRight') stepLightbox(1);
   });
 
+  // Factures
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      if (t.getAttribute('data-tab') === 'factures') { show('viewFactures'); renderFactures(); }
+      else showList();
+    });
+  });
+  $('btnNewFacture').addEventListener('click', function () { openFacture(null, null, 'factures'); });
+  $('btnAddFacture').addEventListener('click', addFactureFromForm);
+  $('btnFBack').addEventListener('click', closeFacture);
+  $('fForm').addEventListener('submit', function (e) { e.preventDefault(); saveFactureForm(); });
+  $('btnFDelete').addEventListener('click', deleteFactureForm);
+  $('fSearch').addEventListener('input', renderFactures);
+  $('fYear').addEventListener('change', renderFactures);
+  $('btnPickFile').addEventListener('click', function () { $('fFile').click(); });
+  $('fFile').addEventListener('change', function () {
+    var file = this.files && this.files[0];
+    this.value = '';
+    if (!file) return;
+    $('fFileName').textContent = 'Lecture…';
+    readFile(file).then(function (r) {
+      state.fFile = r;
+      $('fFileName').textContent = file.name;
+    }).catch(function (e) {
+      state.fFile = null;
+      $('fFileName').textContent = 'Aucun fichier choisi';
+      toast(errMsg(e), true);
+    });
+  });
+  function onFactureClick(e) {
+    if (e.target.closest('a')) return; // lien « Ouvrir »
+    var el = e.target.closest('[data-fid]');
+    if (!el) return;
+    var f = state.factures.find(function (x) { return x.id === el.getAttribute('data-fid'); });
+    if (f) openFacture(f, null, this.id === 'formFactures' ? 'form' : 'factures');
+  }
+  $('fList').addEventListener('click', onFactureClick);
+  $('formFactures').addEventListener('click', onFactureClick);
+
   // Démarrage
-  loadList();
+  loadList().then(loadFactures);
   call('getLinks').then(function (l) {
     $('lnkSheet').href = l.sheetUrl;
     $('lnkSheet').classList.remove('hidden');
+    $('lnkFactures').href = l.facturesUrl;
+    $('lnkFactures').classList.remove('hidden');
   }).catch(function () {});
 </script>
 </body>

@@ -60,6 +60,9 @@ test('connexion, interventions, photos et factures depuis le site GitHub Pages',
     await page.selectOption('#marque', '__autre__');
     await page.fill('#marqueAutre', 'Marque Inconnue');
     await page.fill('#dateDiagnostic', '2026-11-10');
+    // Temps passés : 30 min de diagnostic + 1 h 15 de réparation
+    await page.selectOption('#tempsDiagnostic', '30');
+    await page.selectOption('#tempsReparation', '75');
     await page.fill('#montantPiece', '45,90');
     await page.fill('#montantRegle', '120');
     // Toucher le bouton doit ouvrir le sélecteur de fichiers (comme sur iPhone)
@@ -71,6 +74,10 @@ test('connexion, interventions, photos et factures depuis le site GitHub Pages',
     assert.equal(env.rows[1][3], '0612345678');
     assert.equal(env.rows[1][5], 'Lave-linge');
     assert.equal(env.rows[1][6], 'Marque Inconnue');
+    assert.equal(env.rows[1][9], 30);
+    assert.equal(env.rows[1][11], 75);
+    assert.match(await page.textContent('#marginLine'), /Temps passé : 1 h 45/);
+    assert.match(await page.textContent('#marginLine'), /42,34\s€ \/ heure/);
 
     // Facture liée depuis la fiche
     await page.click('#btnAddFacture');

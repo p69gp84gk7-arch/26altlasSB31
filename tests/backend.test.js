@@ -59,7 +59,7 @@ test('photos : dossier créé au premier envoi, renommé avec le client, suppres
   assert.deepEqual(api('listPhotos', r1.id), { folderUrl: '', photos: [] });
   const ph = api('uploadPhoto', r1.id, 'a.jpg', jpg);
   assert.equal(api('listPhotos', r1.id).photos.length, 1);
-  assert.match(rows[1][14], /folders\//);
+  assert.match(rows[1][16], /folders\//);
   assert.equal(api('getPhotoData', ph.id), jpg);
   api('saveIntervention', Object.assign({}, r1, { nom: 'Durand' }));
   const folder = Object.values(items).find(x => x._kind === 'folder' && x._parent === photosRoot);
@@ -141,7 +141,10 @@ test('feuille : colonne Marque ajoutée automatiquement, données existantes dé
   assert.equal(rows[0][5], "Type d'appareil");
   assert.equal(rows[0][6], 'Marque');
   assert.equal(rows[0][8], 'Date de diagnostic');
-  assert.equal(rows[0][17], 'Marge (€)', 'la colonne de marge se décale en R');
+  assert.equal(rows[0][9], 'Temps diagnostic (min)');
+  assert.equal(rows[0][10], "Date d'intervention");
+  assert.equal(rows[0][11], 'Temps réparation (min)');
+  assert.equal(rows[0][19], 'Marge (€)', 'la colonne de marge se décale en T');
   assert.equal(list[0].appareil, 'Lave-linge Bosch');
   assert.equal(list[0].marque, '');
   assert.equal(list[0].panne, 'Fuite');
@@ -151,6 +154,47 @@ test('feuille : colonne Marque ajoutée automatiquement, données existantes dé
   // Une seule insertion, même après plusieurs appels
   api('listInterventions');
   assert.equal(rows[0].filter(h => h === 'Marque').length, 1);
+  assert.equal(rows[0].filter(h => h === 'Temps réparation (min)').length, 1);
+});
+
+test('feuille : depuis la version avec Marque, seules les colonnes de temps sont ajoutées', () => {
+  const { api, rows, ctx } = makeEnv();
+  // Feuille telle qu'elle est après la mise à jour « Marque » (état réel actuel)
+  rows[0] = ['ID', 'Nom', 'Prénom', 'Téléphone', 'Adresse', "Type d'appareil", 'Marque', 'Panne / travaux',
+    'Date de diagnostic', "Date d'intervention", 'Pièce utilisée', 'Montant pièce (€)', 'Montant réglé (€)',
+    'Terminé', 'Dossier photos', 'Créé le', 'Modifié le', 'Marge (€)'];
+  const d = new ctx.Date(2026, 9, 31, 12), d2 = new ctx.Date(2026, 10, 7, 12);
+  rows.push(['INT-0001', 'Jalabert', 'Jean Philippe', '', '', 'Sèche-linge', 'Whirlpool', 'Courroie HS', d, d2,
+    'Courroie', 25.98, '', false, 'https://drive.google.com/drive/folders/abc', d, d]);
+  const it = api('listInterventions')[0];
+  assert.equal(rows[0].length, 20);
+  assert.equal(it.marque, 'Whirlpool');
+  assert.equal(it.dateDiagnostic, '2026-10-31');
+  assert.equal(it.tempsDiagnostic, '');
+  assert.equal(it.dateIntervention, '2026-11-07');
+  assert.equal(it.piece, 'Courroie');
+  assert.equal(it.montantPiece, 25.98);
+  assert.equal(it.dossierPhotos, 'https://drive.google.com/drive/folders/abc');
+});
+
+test('temps : diagnostic et réparation en minutes, récapitulatif en heures', () => {
+  const { api, rows, extraSheets } = makeEnv();
+  const r = api('saveIntervention', { nom: 'Dupont', tempsDiagnostic: '30', tempsReparation: '75' });
+  assert.equal(r.tempsDiagnostic, 30);
+  assert.equal(r.tempsReparation, 75);
+  assert.equal(rows[1][9], 30);
+  assert.equal(rows[1][11], 75);
+  assert.throws(() => api('saveIntervention', { nom: 'X', tempsReparation: '-5' }), /Durée invalide/);
+  const r2 = api('saveIntervention', { id: r.id, nom: 'Dupont', tempsDiagnostic: '' });
+  assert.equal(r2.tempsDiagnostic, '');
+  assert.equal(r2.tempsReparation, 75, 'temps absent de la demande : conservé');
+  const recap = extraSheets['Récapitulatif']._rows;
+  assert.deepEqual(recap.slice(8).map(x => x[0]), ['Temps de diagnostic (h)', 'Temps de réparation (h)', 'Marge par heure (€/h)']);
+  assert.equal(recap[8][1], '=SUM(Interventions!J2:J)/60');
+  assert.equal(recap[9][1], '=SUM(Interventions!L2:L)/60');
+  assert.equal(recap[10][1], '=IFERROR(B7/(B9+B10))');
+  api('listInterventions');
+  assert.equal(recap.length, 11, 'lignes ajoutées une seule fois');
 });
 
 test('interventions : un champ absent (ancienne application) garde sa valeur', () => {

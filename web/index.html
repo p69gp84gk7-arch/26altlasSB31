@@ -209,7 +209,9 @@
             <select id="marque" class="choice"></select>
             <input id="marqueAutre" class="choice-other hidden" placeholder="Nouvelle marque"></div>
           <div class="field"><label for="dateDiagnostic">Date de diagnostic</label><input id="dateDiagnostic" name="dateDiagnostic" type="date"></div>
+          <div class="field"><label for="tempsDiagnostic">Temps de diagnostic</label><select id="tempsDiagnostic" class="duree"></select></div>
           <div class="field"><label for="dateIntervention">Date d'intervention</label><input id="dateIntervention" name="dateIntervention" type="date"></div>
+          <div class="field"><label for="tempsReparation">Temps de réparation</label><select id="tempsReparation" class="duree"></select></div>
           <div class="field full"><label for="piece">Pièce utilisée</label><input id="piece" name="piece" placeholder="Ex. pompe de vidange"></div>
           <div class="field full"><label for="panne">Panne / travaux</label><textarea id="panne" name="panne"></textarea></div>
         </div>
@@ -355,6 +357,31 @@
   // Listes déroulantes (type d'appareil, marque, fournisseur) avec « Autre… »
   // ------------------------------------------------------------------
   var AUTRE = '__autre__';
+
+  // Durées proposées : de 5 en 5 min jusqu'à 1 h, puis de 15 en 15 min jusqu'à 10 h.
+  var DUREES = (function () {
+    var out = [];
+    for (var m = 5; m < 60; m += 5) out.push(m);
+    for (m = 60; m <= 600; m += 15) out.push(m);
+    return out;
+  })();
+
+  /** 45 → « 45 min », 90 → « 1 h 30 », 120 → « 2 h ». */
+  function formatDuree(min) {
+    min = Math.round(Number(min) || 0);
+    if (min < 60) return min + ' min';
+    var h = Math.floor(min / 60), r = min % 60;
+    return h + ' h' + (r ? ' ' + (r < 10 ? '0' : '') + r : '');
+  }
+
+  function fillDuree(id, value) {
+    var v = value === '' || value == null ? '' : String(Math.round(Number(value)));
+    var list = DUREES.slice();
+    if (v && list.indexOf(Number(v)) === -1) { list.push(Number(v)); list.sort(function (a, b) { return a - b; }); }
+    $(id).innerHTML = '<option value="">—</option>' +
+      list.map(function (m) { return '<option value="' + m + '">' + formatDuree(m) + '</option>'; }).join('');
+    $(id).value = v;
+  }
 
   function uniqueSorted(values) {
     var seen = {}, out = [];
@@ -591,6 +618,8 @@
     });
     fillChoice('appareil', listes('types'), f.appareil);
     fillChoice('marque', listes('marques'), f.marque);
+    fillDuree('tempsDiagnostic', f.tempsDiagnostic);
+    fillDuree('tempsReparation', f.tempsReparation);
     $('termine').checked = !!f.termine;
     $('formTitle').textContent = item ? ((item.nom + ' ' + item.prenom).trim() + ' · ' + item.id) : 'Nouvelle intervention';
     $('btnDelete').classList.toggle('hidden', !item);
@@ -604,8 +633,14 @@
 
   function updateMargin() {
     var p = $('montantPiece').value, r = $('montantRegle').value;
-    if (p === '' && r === '') { $('marginLine').textContent = 'Marge : –'; return; }
-    $('marginLine').textContent = 'Marge (réglé − pièce) : ' + euro(num(r) - num(p));
+    var temps = num($('tempsDiagnostic').value) + num($('tempsReparation').value);
+    var parts = [];
+    if (p !== '' || r !== '') parts.push('Marge (réglé − pièce) : ' + euro(num(r) - num(p)));
+    if (temps > 0) {
+      parts.push('Temps passé : ' + formatDuree(temps));
+      if (p !== '' || r !== '') parts.push(euro((num(r) - num(p)) / (temps / 60)) + ' / heure');
+    }
+    $('marginLine').textContent = parts.length ? parts.join(' · ') : 'Marge : –';
   }
 
   function formData() {
@@ -613,6 +648,8 @@
     FIELDS.forEach(function (k) { d[k] = $(k).value; });
     d.appareil = choiceValue('appareil');
     d.marque = choiceValue('marque');
+    d.tempsDiagnostic = $('tempsDiagnostic').value;
+    d.tempsReparation = $('tempsReparation').value;
     d.termine = $('termine').checked;
     return d;
   }
@@ -982,6 +1019,8 @@
   $('btnDelete').addEventListener('click', remove);
   $('montantPiece').addEventListener('input', updateMargin);
   $('montantRegle').addEventListener('input', updateMargin);
+  $('tempsDiagnostic').addEventListener('change', updateMargin);
+  $('tempsReparation').addEventListener('change', updateMargin);
   $('search').addEventListener('input', renderList);
   document.querySelectorAll('.chip').forEach(function (c) {
     c.addEventListener('click', function () {

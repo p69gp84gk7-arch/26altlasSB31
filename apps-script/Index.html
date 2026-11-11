@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>Dépannages – Fichier clients</title>
+  <style>
+    :root {
+      --bg: #f4f6f9;
+      --card: #ffffff;
+      --text: #1d2433;
+      --muted: #667085;
+      --line: #e3e7ee;
+      --primary: #1f3864;
+      --primary-soft: #e8edf7;
+      --ok: #1e7b45;
+      --ok-soft: #dcf2e4;
+      --warn: #a15c00;
+      --warn-soft: #fdf0d9;
+      --danger: #b42318;
+      --radius: 12px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; font-size: 16px; }
+    button, input, textarea, select { font: inherit; color: inherit; }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 0 16px 96px; }
+
+    header { position: sticky; top: 0; z-index: 10; background: var(--primary); color: #fff; }
+    header .wrap { display: flex; align-items: center; gap: 12px; padding-top: 12px; padding-bottom: 12px; }
+    header h1 { font-size: 18px; margin: 0; flex: 1; font-weight: 600; }
+    header a { color: #fff; font-size: 14px; opacity: .85; }
+    .tabs { display: flex; gap: 4px; padding-bottom: 0 !important; padding-top: 0 !important; }
+    .tab { background: transparent; border: 0; color: rgba(255,255,255,.75); padding: 10px 14px; cursor: pointer;
+      font-weight: 600; border-bottom: 3px solid transparent; }
+    .tab.on { color: #fff; border-bottom-color: #fff; }
+    .field select { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+    .file-pick { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+    .file-pick .name { font-size: 14px; color: var(--muted); word-break: break-all; }
+    .mini { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+    .mini .item { padding: 10px 12px; }
+    .item a.open { font-size: 14px; color: var(--primary); }
+
+    .btn { border: 0; border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600;
+      background: var(--primary); color: #fff; }
+    .btn.light { background: #fff; color: var(--primary); }
+    .btn.ghost { background: transparent; color: var(--primary); border: 1px solid var(--line); }
+    .btn.danger { background: transparent; color: var(--danger); border: 1px solid #f1c6c2; }
+    .btn:disabled { opacity: .5; cursor: default; }
+
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0; }
+    .stat { background: var(--card); border-radius: var(--radius); padding: 10px 12px; border: 1px solid var(--line); }
+    .stat b { display: block; font-size: 18px; }
+    .stat span { font-size: 12px; color: var(--muted); }
+
+    .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .toolbar input { flex: 1 1 220px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+    .chips { display: flex; gap: 6px; }
+    .chip { border: 1px solid var(--line); background: #fff; border-radius: 999px; padding: 8px 12px; cursor: pointer; font-size: 14px; }
+    .chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+
+    .list { display: flex; flex-direction: column; gap: 8px; }
+    .item { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px;
+      cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; }
+    .item:hover { border-color: #c5cede; }
+    .item .who { font-weight: 600; }
+    .item .meta { color: var(--muted); font-size: 14px; }
+    .item .right { text-align: right; }
+    .badge { display: inline-block; font-size: 12px; font-weight: 600; padding: 3px 8px; border-radius: 999px; }
+    .badge.ok { background: var(--ok-soft); color: var(--ok); }
+    .badge.wip { background: var(--warn-soft); color: var(--warn); }
+    .empty { text-align: center; color: var(--muted); padding: 40px 0; }
+
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-top: 16px; }
+    .card h2 { font-size: 16px; margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .full { grid-column: 1 / -1; }
+    label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+    .field input, .field textarea { width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+    .field textarea { min-height: 80px; resize: vertical; }
+    .check { display: flex; align-items: center; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+    .check input { width: 22px; height: 22px; accent-color: var(--ok); }
+    .total { background: var(--primary-soft); border-radius: 10px; padding: 10px 12px; font-size: 14px; }
+
+    .topline { display: flex; align-items: center; gap: 8px; margin-top: 16px; }
+    .topline h2 { flex: 1; margin: 0; font-size: 18px; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 16px; }
+    .actions .spacer { flex: 1; }
+
+    .photos { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; }
+    .ph { position: relative; aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: var(--primary-soft);
+      display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 12px; cursor: pointer; }
+    .ph img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .photo-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+    .photo-bar a { font-size: 14px; color: var(--primary); }
+    .hint { font-size: 13px; color: var(--muted); }
+
+    .lightbox { position: fixed; inset: 0; background: rgba(10, 14, 22, .92); display: none; z-index: 50;
+      flex-direction: column; align-items: center; justify-content: center; padding: 16px; }
+    .lightbox.on { display: flex; }
+    .lightbox img { max-width: 100%; max-height: calc(100vh - 120px); border-radius: 8px; }
+    .lightbox .bar { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; justify-content: center; }
+    .lightbox .bar a { color: #fff; padding: 10px 16px; }
+
+    .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #1d2433; color: #fff;
+      padding: 10px 16px; border-radius: 10px; font-size: 14px; display: none; z-index: 60; max-width: calc(100% - 32px); }
+    .toast.on { display: block; }
+    .toast.err { background: var(--danger); }
+    .loading { text-align: center; color: var(--muted); padding: 40px 0; }
+    .hidden { display: none !important; }
+
+    @media (max-width: 600px) {
+      .stats { grid-template-columns: repeat(2, 1fr); }
+      .grid { grid-template-columns: 1fr; }
+      header h1 { font-size: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="wrap">
+      <h1>Dépannages électroménager</h1>
+      <a id="lnkSheet" href="#" target="_blank" class="hidden">Feuille</a>
+      <button class="btn light" id="btnNew">+ Nouvelle</button>
+    </div>
+    <div class="wrap tabs">
+      <button class="tab on" data-tab="list">Interventions</button>
+      <button class="tab" data-tab="factures">Factures pièces</button>
+    </div>
+  </header>
+
+  <!-- ============ LISTE ============ -->
+  <div class="wrap" id="viewList">
+    <div class="stats">
+      <div class="stat"><b id="stTotal">–</b><span>Interventions</span></div>
+      <div class="stat"><b id="stWip">–</b><span>En cours</span></div>
+      <div class="stat"><b id="stPaid">–</b><span>Réglé par les clients</span></div>
+      <div class="stat"><b id="stMargin">–</b><span>Marge (réglé − pièces)</span></div>
+    </div>
+    <div class="toolbar">
+      <input id="search" type="search" placeholder="Rechercher un client, un appareil…">
+      <div class="chips">
+        <button class="chip on" data-filter="all">Toutes</button>
+        <button class="chip" data-filter="wip">En cours</button>
+        <button class="chip" data-filter="done">Terminées</button>
+      </div>
+    </div>
+    <div class="list" id="list"><div class="loading">Chargement…</div></div>
+  </div>
+
+  <!-- ============ FICHE ============ -->
+  <div class="wrap hidden" id="viewForm">
+    <div class="topline">
+      <button class="btn ghost" id="btnBack">‹ Retour</button>
+      <h2 id="formTitle">Nouvelle intervention</h2>
+    </div>
+
+    <form id="form" autocomplete="off">
+      <div class="card">
+        <h2>Client</h2>
+        <div class="grid">
+          <div class="field"><label for="nom">Nom *</label><input id="nom" name="nom" required></div>
+          <div class="field"><label for="prenom">Prénom</label><input id="prenom" name="prenom"></div>
+          <div class="field"><label for="telephone">Téléphone</label><input id="telephone" name="telephone" type="tel" inputmode="tel"></div>
+          <div class="field"><label for="adresse">Adresse</label><input id="adresse" name="adresse"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Intervention</h2>
+        <div class="grid">
+          <div class="field"><label for="dateAppel">Date de l'appel</label><input id="dateAppel" name="dateAppel" type="date"></div>
+          <div class="field"><label for="dateIntervention">Date d'intervention</label><input id="dateIntervention" name="dateIntervention" type="date"></div>
+          <div class="field"><label for="appareil">Appareil</label><input id="appareil" name="appareil" placeholder="Ex. lave-linge Bosch"></div>
+          <div class="field"><label for="piece">Pièce utilisée</label><input id="piece" name="piece" placeholder="Ex. pompe de vidange"></div>
+          <div class="field full"><label for="panne">Panne / travaux</label><textarea id="panne" name="panne"></textarea></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Règlement</h2>
+        <div class="grid">
+          <div class="field"><label for="montantPiece">Montant de la pièce (€)</label><input id="montantPiece" name="montantPiece" inputmode="decimal" placeholder="0,00"></div>
+          <div class="field"><label for="montantRegle">Montant réglé par le client (€)</label><input id="montantRegle" name="montantRegle" inputmode="decimal" placeholder="0,00"></div>
+          <div class="total full" id="marginLine">Marge : –</div>
+          <label class="check full"><input type="checkbox" id="termine" name="termine"> <span>Intervention terminée</span></label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="btn" id="btnSave">Enregistrer</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn danger hidden" id="btnDelete">Supprimer la fiche</button>
+      </div>
+    </form>
+
+    <div class="card">
+      <h2>Factures des pièces</h2>
+      <div class="mini" id="formFactures"></div>
+      <button type="button" class="btn" id="btnAddFacture">+ Ajouter une facture</button>
+    </div>
+
+    <div class="card">
+      <h2>Photos</h2>
+      <div class="photo-bar">
+        <button type="button" class="btn" id="btnAddPhoto">+ Ajouter des photos</button>
+        <input type="file" id="fileInput" accept="image/*" multiple class="hidden">
+        <a id="lnkFolder" href="#" target="_blank" class="hidden">Ouvrir le dossier dans Drive</a>
+      </div>
+      <div class="photos" id="photos"></div>
+      <p class="hint" id="photoHint">Les photos sont enregistrées dans Google Drive, dans le dossier de l'intervention.</p>
+    </div>
+  </div>
+
+  <!-- ============ LISTE DES FACTURES ============ -->
+  <div class="wrap hidden" id="viewFactures">
+    <div class="stats">
+      <div class="stat"><b id="fsCount">–</b><span>Factures</span></div>
+      <div class="stat"><b id="fsTotal">–</b><span id="fsTotalLabel">Total</span></div>
+      <div class="stat"><b id="fsStock">–</b><span>Pour le stock</span></div>
+      <div class="stat"><b id="fsMissing">–</b><span>Sans montant</span></div>
+    </div>
+    <div class="toolbar">
+      <input id="fSearch" type="search" placeholder="Rechercher un fournisseur, une pièce…">
+      <select id="fYear" class="chip"></select>
+      <button class="btn" id="btnNewFacture">+ Facture</button>
+    </div>
+    <div class="list" id="fList"><div class="loading">Chargement…</div></div>
+    <p class="hint">Les fichiers sont archivés dans Google Drive, dossier « Factures pièces », rangés par année.
+      <a id="lnkFactures" href="#" target="_blank" class="hidden">Ouvrir le dossier</a></p>
+  </div>
+
+  <!-- ============ FICHE FACTURE ============ -->
+  <div class="wrap hidden" id="viewFacture">
+    <div class="topline">
+      <button class="btn ghost" id="btnFBack">‹ Retour</button>
+      <h2 id="fTitle">Nouvelle facture</h2>
+    </div>
+    <form id="fForm" autocomplete="off">
+      <div class="card">
+        <h2>Fichier de la facture</h2>
+        <div class="file-pick" id="fPickNew">
+          <button type="button" class="btn" id="btnPickFile">Choisir un PDF ou une photo</button>
+          <input type="file" id="fFile" accept="application/pdf,image/*" class="hidden">
+          <span class="name" id="fFileName">Aucun fichier choisi</span>
+        </div>
+        <div class="file-pick hidden" id="fPickExisting">
+          <a id="fOpen" href="#" target="_blank" class="btn ghost">Ouvrir la facture</a>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Informations</h2>
+        <div class="grid">
+          <div class="field"><label for="fDate">Date de la facture *</label><input id="fDate" type="date" required></div>
+          <div class="field"><label for="fFournisseur">Fournisseur</label><input id="fFournisseur" placeholder="Ex. Pièces Express"></div>
+          <div class="field"><label for="fNumero">N° de facture</label><input id="fNumero"></div>
+          <div class="field"><label for="fMontant">Montant (€)</label><input id="fMontant" inputmode="decimal" placeholder="0,00"></div>
+          <div class="field full"><label for="fPiece">Pièce(s) commandée(s)</label><input id="fPiece"></div>
+          <div class="field full"><label for="fIntervention">Intervention liée</label><select id="fIntervention"></select></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="submit" class="btn" id="btnFSave">Archiver la facture</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn danger hidden" id="btnFDelete">Supprimer</button>
+      </div>
+    </form>
+  </div>
+
+  <!-- ============ VISIONNEUSE ============ -->
+  <div class="lightbox" id="lightbox">
+    <img id="lbImg" alt="">
+    <div class="bar">
+      <button class="btn light" id="lbPrev">‹</button>
+      <a id="lbOpen" href="#" target="_blank">Ouvrir dans Drive</a>
+      <button class="btn danger" id="lbDelete" style="color:#fff;border-color:#fff">Supprimer</button>
+      <button class="btn light" id="lbNext">›</button>
+      <button class="btn light" id="lbClose">Fermer</button>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+<script>
+  // ------------------------------------------------------------------
+  // État
+  // ------------------------------------------------------------------
+  var state = {
+    items: [],
+    filter: 'all',
+    current: null,      // fiche ouverte (null = nouvelle)
+    photos: [],
+    photoCache: {},     // id photo -> data URL
+    lbIndex: -1,
+    busy: false,
+    factures: [],
+    facturesLoaded: false,
+    facture: null,      // facture ouverte (null = nouvelle)
+    fReturn: 'factures',// vue à afficher après la fiche facture
+    fFile: null         // fichier choisi {name, dataUrl}
+  };
+  var VIEWS = ['viewList', 'viewForm', 'viewFactures', 'viewFacture'];
+  function show(view) {
+    VIEWS.forEach(function (v) { $(v).classList.toggle('hidden', v !== view); });
+    var tab = (view === 'viewFactures' || (view === 'viewFacture' && state.fReturn === 'factures')) ? 'factures' : 'list';
+    document.querySelectorAll('.tab').forEach(function (t) { t.classList.toggle('on', t.getAttribute('data-tab') === tab); });
+    window.scrollTo(0, 0);
+  }
+  var FIELDS = ['nom', 'prenom', 'telephone', 'adresse', 'dateAppel', 'dateIntervention',
+                'appareil', 'piece', 'panne', 'montantPiece', 'montantRegle'];
+
+  var $ = function (id) { return document.getElementById(id); };
+
+  // Appel serveur sous forme de promesse
+  function call(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      var r = google.script.run.withSuccessHandler(resolve).withFailureHandler(reject);
+      r[fn].apply(r, args);
+    });
+  }
+
+  function toast(msg, isErr) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.className = 'toast on' + (isErr ? ' err' : '');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function () { t.className = 'toast'; }, isErr ? 6000 : 2500);
+  }
+  function errMsg(e) { return (e && e.message) ? e.message : String(e); }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+  function num(v) {
+    if (v === '' || v == null) return 0;
+    var n = Number(String(v).replace(/\s|€/g, '').replace(',', '.'));
+    return isNaN(n) ? 0 : n;
+  }
+  function euro(n) {
+    return n.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' });
+  }
+  function frDate(iso) {
+    if (!iso) return '';
+    var p = String(iso).split('-');
+    return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso;
+  }
+  function today() {
+    var d = new Date();
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
+  }
+  function amountToInput(v) {
+    return (v === '' || v == null) ? '' : String(v).replace('.', ',');
+  }
+
+  // ------------------------------------------------------------------
+  // Liste
+  // ------------------------------------------------------------------
+  function loadList() {
+    $('list').innerHTML = '<div class="loading">Chargement…</div>';
+    return call('listInterventions').then(function (items) {
+      state.items = items || [];
+      renderList();
+    }).catch(function (e) {
+      $('list').innerHTML = '<div class="empty">Impossible de charger les données.<br>' + esc(errMsg(e)) + '</div>';
+    });
+  }
+
+  function renderStats() {
+    var total = state.items.length, wip = 0, paid = 0, parts = 0;
+    state.items.forEach(function (it) {
+      if (!it.termine) wip++;
+      paid += num(it.montantRegle);
+      parts += num(it.montantPiece);
+    });
+    $('stTotal').textContent = total;
+    $('stWip').textContent = wip;
+    $('stPaid').textContent = euro(paid);
+    $('stMargin').textContent = euro(paid - parts);
+  }
+
+  function renderList() {
+    renderStats();
+    var q = $('search').value.trim().toLowerCase();
+    var rows = state.items.filter(function (it) {
+      if (state.filter === 'wip' && it.termine) return false;
+      if (state.filter === 'done' && !it.termine) return false;
+      if (!q) return true;
+      return [it.id, it.nom, it.prenom, it.telephone, it.adresse, it.appareil, it.piece, it.panne]
+        .join(' ').toLowerCase().indexOf(q) !== -1;
+    });
+    if (!rows.length) {
+      $('list').innerHTML = '<div class="empty">' +
+        (state.items.length ? 'Aucune intervention ne correspond.' : 'Aucune intervention pour le moment.<br>Appuyez sur « + Nouvelle » pour commencer.') +
+        '</div>';
+      return;
+    }
+    $('list').innerHTML = rows.map(function (it) {
+      var date = it.dateIntervention ? 'Intervention le ' + frDate(it.dateIntervention)
+               : (it.dateAppel ? 'Appel le ' + frDate(it.dateAppel) : '');
+      var meta = [it.appareil, it.piece].filter(Boolean).join(' · ');
+      return '<div class="item" data-id="' + esc(it.id) + '">' +
+        '<div><div class="who">' + esc((it.nom + ' ' + it.prenom).trim()) + '</div>' +
+        '<div class="meta">' + esc(meta || '—') + '</div>' +
+        '<div class="meta">' + esc(it.id) + (date ? ' · ' + esc(date) : '') + '</div></div>' +
+        '<div class="right">' +
+        '<span class="badge ' + (it.termine ? 'ok">Terminé' : 'wip">En cours') + '</span>' +
+        '<div class="meta" style="margin-top:6px">' + (it.montantRegle !== '' ? esc(euro(num(it.montantRegle))) : '') + '</div>' +
+        '</div></div>';
+    }).join('');
+  }
+
+  // ------------------------------------------------------------------
+  // Fiche
+  // ------------------------------------------------------------------
+  function showList() {
+    show('viewList');
+    renderList();
+  }
+
+  function openForm(item) {
+    state.current = item || null;
+    state.photos = [];
+    var f = item || { dateAppel: today() };
+    FIELDS.forEach(function (k) {
+      var v = f[k] == null ? '' : f[k];
+      if (k === 'montantPiece' || k === 'montantRegle') v = amountToInput(v);
+      $(k).value = v;
+    });
+    $('termine').checked = !!f.termine;
+    $('formTitle').textContent = item ? ((item.nom + ' ' + item.prenom).trim() + ' · ' + item.id) : 'Nouvelle intervention';
+    $('btnDelete').classList.toggle('hidden', !item);
+    updateMargin();
+    show('viewForm');
+    renderFormFactures();
+    renderPhotos();
+    if (item) loadPhotos();
+    if (!item) $('nom').focus();
+  }
+
+  function updateMargin() {
+    var p = $('montantPiece').value, r = $('montantRegle').value;
+    if (p === '' && r === '') { $('marginLine').textContent = 'Marge : –'; return; }
+    $('marginLine').textContent = 'Marge (réglé − pièce) : ' + euro(num(r) - num(p));
+  }
+
+  function formData() {
+    var d = { id: state.current ? state.current.id : '' };
+    FIELDS.forEach(function (k) { d[k] = $(k).value; });
+    d.termine = $('termine').checked;
+    return d;
+  }
+
+  function save(silent) {
+    if (!$('nom').value.trim()) {
+      toast('Le nom du client est obligatoire.', true);
+      $('nom').focus();
+      return Promise.reject(new Error('nom'));
+    }
+    $('btnSave').disabled = true;
+    $('btnSave').textContent = 'Enregistrement…';
+    return call('saveIntervention', formData()).then(function (rec) {
+      var idx = state.items.findIndex(function (it) { return it.id === rec.id; });
+      if (idx >= 0) state.items[idx] = rec; else state.items.unshift(rec);
+      state.current = rec;
+      $('formTitle').textContent = (rec.nom + ' ' + rec.prenom).trim() + ' · ' + rec.id;
+      $('btnDelete').classList.remove('hidden');
+      renderPhotos();
+      if (!silent) toast('Fiche enregistrée');
+      return rec;
+    }).catch(function (e) {
+      if (errMsg(e) !== 'nom') toast('Erreur : ' + errMsg(e), true);
+      throw e;
+    }).finally(function () {
+      $('btnSave').disabled = false;
+      $('btnSave').textContent = 'Enregistrer';
+    });
+  }
+
+  function remove() {
+    if (!state.current) return;
+    if (!confirm('Supprimer la fiche ' + state.current.id + ' ?\nLes photos restent dans Google Drive.')) return;
+    var id = state.current.id;
+    call('deleteIntervention', id).then(function () {
+      state.items = state.items.filter(function (it) { return it.id !== id; });
+      toast('Fiche supprimée');
+      showList();
+    }).catch(function (e) { toast('Erreur : ' + errMsg(e), true); });
+  }
+
+  // ------------------------------------------------------------------
+  // Photos
+  // ------------------------------------------------------------------
+  function loadPhotos() {
+    var id = state.current && state.current.id;
+    if (!id) return;
+    $('photos').innerHTML = '<div class="hint">Chargement des photos…</div>';
+    call('listPhotos', id).then(function (res) {
+      if (!state.current || state.current.id !== id) return;
+      state.photos = res.photos || [];
+      $('lnkFolder').href = res.folderUrl || '#';
+      $('lnkFolder').classList.toggle('hidden', !res.folderUrl);
+      renderPhotos();
+    }).catch(function (e) {
+      $('photos').innerHTML = '<div class="hint">Erreur : ' + esc(errMsg(e)) + '</div>';
+    });
+  }
+
+  function renderPhotos() {
+    var saved = !!(state.current && state.current.id);
+    $('photoHint').textContent = saved
+      ? "Les photos sont enregistrées dans Google Drive, dans le dossier de l'intervention."
+      : 'La fiche sera enregistrée automatiquement avant l\'ajout des photos.';
+    if (!saved) { $('lnkFolder').classList.add('hidden'); }
+    if (!state.photos.length) {
+      $('photos').innerHTML = saved ? '<div class="hint">Aucune photo.</div>' : '';
+      return;
+    }
+    $('photos').innerHTML = state.photos.map(function (p, i) {
+      var src = p.pending ? p.preview : state.photoCache[p.id];
+      return '<div class="ph" data-index="' + i + '">' +
+        (src ? '<img src="' + src + '" alt="">' : (p.pending ? 'Envoi…' : 'Chargement…')) + '</div>';
+    }).join('');
+    state.photos.forEach(function (p) { if (!p.pending && !state.photoCache[p.id]) fetchPhoto(p.id); });
+  }
+
+  var fetching = {};
+  function fetchPhoto(fileId) {
+    if (fetching[fileId]) return;
+    fetching[fileId] = true;
+    call('getPhotoData', fileId).then(function (dataUrl) {
+      state.photoCache[fileId] = dataUrl;
+      var i = state.photos.findIndex(function (p) { return p.id === fileId; });
+      var el = document.querySelector('.ph[data-index="' + i + '"]');
+      if (el) el.innerHTML = '<img src="' + dataUrl + '" alt="">';
+      if (state.lbIndex === i) $('lbImg').src = dataUrl;
+    }).catch(function () {
+      var i = state.photos.findIndex(function (p) { return p.id === fileId; });
+      var el = document.querySelector('.ph[data-index="' + i + '"]');
+      if (el) el.textContent = 'Erreur';
+    }).finally(function () { delete fetching[fileId]; });
+  }
+
+  /** Réduit l'image (côté téléphone) avant l'envoi : 1600 px max, JPEG. */
+  function compress(file, maxSize, quality) {
+    return new Promise(function (resolve) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var original = reader.result;
+        var img = new Image();
+        img.onload = function () {
+          var max = maxSize || 1600, w = img.naturalWidth, h = img.naturalHeight;
+          var scale = Math.min(1, max / Math.max(w, h));
+          var c = document.createElement('canvas');
+          c.width = Math.round(w * scale); c.height = Math.round(h * scale);
+          c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+          try { resolve(c.toDataURL('image/jpeg', quality || 0.82)); } catch (e) { resolve(original); }
+        };
+        img.onerror = function () { resolve(original); };
+        img.src = original;
+      };
+      reader.onerror = function () { resolve(null); };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function addPhotos(files) {
+    if (!files || !files.length) return;
+    var ready = (state.current && state.current.id) ? Promise.resolve() : save(true);
+    ready.then(function () {
+      var id = state.current.id;
+      var list = files;
+      var done = 0, failed = 0;
+      // Envoi l'une après l'autre pour ne pas saturer la connexion mobile.
+      return list.reduce(function (p, file) {
+        return p.then(function () {
+          return compress(file).then(function (dataUrl) {
+            if (!dataUrl) { failed++; return; }
+            var tmp = { pending: true, preview: dataUrl };
+            state.photos.push(tmp);
+            renderPhotos();
+            var name = (file.name || 'photo').replace(/\.[^.]+$/, '') + '.jpg';
+            if (dataUrl.indexOf('data:image/jpeg') !== 0) name = file.name || 'photo';
+            return call('uploadPhoto', id, name, dataUrl).then(function (ph) {
+              state.photoCache[ph.id] = dataUrl;
+              var i = state.photos.indexOf(tmp);
+              if (i >= 0) state.photos[i] = ph;
+              done++;
+            }).catch(function (e) {
+              state.photos = state.photos.filter(function (x) { return x !== tmp; });
+              failed++;
+              toast('Erreur photo : ' + errMsg(e), true);
+            }).finally(renderPhotos);
+          });
+        });
+      }, Promise.resolve()).then(function () {
+        if (done) toast(done + ' photo' + (done > 1 ? 's' : '') + ' enregistrée' + (done > 1 ? 's' : ''));
+        if (!failed) loadPhotos();
+      });
+    }).catch(function () {});
+  }
+
+  // Visionneuse
+  function openLightbox(i) {
+    var p = state.photos[i];
+    if (!p || p.pending) return;
+    state.lbIndex = i;
+    $('lbImg').src = state.photoCache[p.id] || '';
+    $('lbOpen').href = p.url;
+    $('lightbox').classList.add('on');
+    if (!state.photoCache[p.id]) fetchPhoto(p.id);
+  }
+  function closeLightbox() { $('lightbox').classList.remove('on'); state.lbIndex = -1; }
+  function stepLightbox(d) {
+    var n = state.photos.length;
+    if (!n) return;
+    var i = (state.lbIndex + d + n) % n;
+    openLightbox(i);
+  }
+  function deleteCurrentPhoto() {
+    var p = state.photos[state.lbIndex];
+    if (!p || !confirm('Mettre cette photo à la corbeille Drive ?')) return;
+    call('deletePhoto', p.id).then(function () {
+      state.photos = state.photos.filter(function (x) { return x.id !== p.id; });
+      closeLightbox();
+      renderPhotos();
+      toast('Photo supprimée');
+    }).catch(function (e) { toast('Erreur : ' + errMsg(e), true); });
+  }
+
+
+  // ------------------------------------------------------------------
+  // Factures des pièces
+  // ------------------------------------------------------------------
+  function loadFactures() {
+    return call('listFactures').then(function (list) {
+      state.factures = list || [];
+      state.facturesLoaded = true;
+      renderFactures();
+      renderFormFactures();
+    }).catch(function (e) {
+      $('fList').innerHTML = '<div class="empty">Impossible de charger les factures.<br>' + esc(errMsg(e)) + '</div>';
+    });
+  }
+
+  function clientOf(f) {
+    var it = f.intervention && state.items.find(function (x) { return x.id === f.intervention; });
+    return it ? (it.nom + ' ' + it.prenom).trim() : (f.client || '');
+  }
+
+  function factureItem(f) {
+    var title = [f.fournisseur || 'Fournisseur non renseigné', f.numero ? 'n° ' + f.numero : ''].filter(Boolean).join(' · ');
+    var link = f.intervention ? f.intervention + (clientOf(f) ? ' · ' + clientOf(f) : '') : 'Stock';
+    return '<div class="item" data-fid="' + esc(f.id) + '">' +
+      '<div><div class="who">' + esc(title) + '</div>' +
+      '<div class="meta">' + esc(f.piece || '—') + '</div>' +
+      '<div class="meta">' + esc(f.id + ' · ' + frDate(f.date) + ' · ' + link) + '</div></div>' +
+      '<div class="right"><b>' + (f.montant !== '' ? esc(euro(num(f.montant))) : '—') + '</b>' +
+      (f.fichier ? '<div style="margin-top:6px"><a class="open" href="' + esc(f.fichier) + '" target="_blank">Ouvrir</a></div>' : '') +
+      '</div></div>';
+  }
+
+  function renderFactures() {
+    // Années disponibles
+    var years = {};
+    state.factures.forEach(function (f) { if (f.date) years[String(f.date).slice(0, 4)] = true; });
+    var list = Object.keys(years).sort().reverse();
+    var sel = $('fYear'), cur = sel.value;
+    sel.innerHTML = '<option value="">Toutes les années</option>' +
+      list.map(function (y) { return '<option value="' + y + '">' + y + '</option>'; }).join('');
+    sel.value = list.indexOf(cur) >= 0 ? cur : '';
+
+    var y = sel.value, q = $('fSearch').value.trim().toLowerCase();
+    var rows = state.factures.filter(function (f) {
+      if (y && String(f.date).slice(0, 4) !== y) return false;
+      if (!q) return true;
+      return [f.id, f.fournisseur, f.numero, f.piece, f.intervention, clientOf(f)].join(' ').toLowerCase().indexOf(q) !== -1;
+    });
+    var total = 0, stock = 0, missing = 0;
+    rows.forEach(function (f) {
+      total += num(f.montant);
+      if (!f.intervention) stock++;
+      if (f.montant === '') missing++;
+    });
+    $('fsCount').textContent = rows.length;
+    $('fsTotal').textContent = euro(total);
+    $('fsTotalLabel').textContent = y ? 'Total ' + y : 'Total';
+    $('fsStock').textContent = stock;
+    $('fsMissing').textContent = missing;
+    if (!state.facturesLoaded) return;
+    $('fList').innerHTML = rows.length ? rows.map(factureItem).join('')
+      : '<div class="empty">' + (state.factures.length ? 'Aucune facture ne correspond.'
+        : 'Aucune facture archivée.<br>Appuyez sur « + Facture » pour en ajouter une.') + '</div>';
+  }
+
+  /** Factures liées à l'intervention ouverte. */
+  function renderFormFactures() {
+    var id = state.current && state.current.id;
+    var rows = id ? state.factures.filter(function (f) { return f.intervention === id; }) : [];
+    var total = rows.reduce(function (s, f) { return s + num(f.montant); }, 0);
+    $('formFactures').innerHTML = rows.length
+      ? rows.map(factureItem).join('') + '<div class="total">Total des factures : ' + esc(euro(total)) + '</div>'
+      : '<div class="hint">' + (id ? 'Aucune facture liée.' : 'La fiche sera enregistrée automatiquement avant l\'ajout d\'une facture.') + '</div>';
+  }
+
+  function fillInterventionSelect(selected) {
+    var opts = '<option value="">— Aucune (pièce pour le stock) —</option>' +
+      state.items.map(function (it) {
+        return '<option value="' + esc(it.id) + '">' + esc(it.id + ' · ' + (it.nom + ' ' + it.prenom).trim() +
+          (it.appareil ? ' · ' + it.appareil : '')) + '</option>';
+      }).join('');
+    $('fIntervention').innerHTML = opts;
+    $('fIntervention').value = selected || '';
+  }
+
+  function openFacture(f, preset, returnTo) {
+    state.facture = f || null;
+    state.fReturn = returnTo || 'factures';
+    state.fFile = null;
+    var d = f || Object.assign({ date: today() }, preset || {});
+    $('fDate').value = d.date || '';
+    $('fFournisseur').value = d.fournisseur || '';
+    $('fNumero').value = d.numero || '';
+    $('fMontant').value = amountToInput(d.montant);
+    $('fPiece').value = d.piece || '';
+    fillInterventionSelect(d.intervention);
+    $('fTitle').textContent = f ? 'Facture ' + f.id : 'Nouvelle facture';
+    $('fPickNew').classList.toggle('hidden', !!f);
+    $('fPickExisting').classList.toggle('hidden', !f);
+    $('fOpen').href = (f && f.fichier) || '#';
+    $('fFileName').textContent = 'Aucun fichier choisi';
+    $('btnFDelete').classList.toggle('hidden', !f);
+    $('btnFSave').textContent = f ? 'Enregistrer' : 'Archiver la facture';
+    show('viewFacture');
+  }
+
+  function closeFacture() {
+    if (state.fReturn === 'form') { show('viewForm'); renderFormFactures(); }
+    else { show('viewFactures'); renderFactures(); }
+  }
+
+  function readFile(file) {
+    var MAX_MB = 20;
+    if (file.size > MAX_MB * 1024 * 1024) return Promise.reject(new Error('Fichier trop volumineux (' + MAX_MB + ' Mo maximum).'));
+    if (file.type && file.type.indexOf('image/') === 0) {
+      // Photo de facture : réduite à 2000 px, gardée lisible.
+      return compress(file, 2000, 0.85).then(function (dataUrl) {
+        if (!dataUrl) throw new Error('Lecture du fichier impossible.');
+        var jpeg = dataUrl.indexOf('data:image/jpeg') === 0;
+        return { name: jpeg ? (file.name || 'facture').replace(/\.[^.]+$/, '') + '.jpg' : file.name, dataUrl: dataUrl };
+      });
+    }
+    return new Promise(function (resolve, reject) {
+      var r = new FileReader();
+      r.onload = function () { resolve({ name: file.name || 'facture.pdf', dataUrl: r.result }); };
+      r.onerror = function () { reject(new Error('Lecture du fichier impossible.')); };
+      r.readAsDataURL(file);
+    });
+  }
+
+  function saveFactureForm() {
+    if (!$('fDate').value) { toast('La date de la facture est obligatoire.', true); return; }
+    if (!state.facture && !state.fFile) { toast('Choisissez le fichier de la facture (PDF ou photo).', true); return; }
+    var data = {
+      id: state.facture ? state.facture.id : '',
+      date: $('fDate').value,
+      fournisseur: $('fFournisseur').value,
+      numero: $('fNumero').value,
+      montant: $('fMontant').value,
+      piece: $('fPiece').value,
+      intervention: $('fIntervention').value
+    };
+    $('btnFSave').disabled = true;
+    $('btnFSave').textContent = 'Envoi…';
+    call('saveFacture', data, state.facture ? null : state.fFile).then(function (rec) {
+      var i = state.factures.findIndex(function (f) { return f.id === rec.id; });
+      if (i >= 0) state.factures[i] = rec; else state.factures.unshift(rec);
+      state.factures.sort(function (a, b) { return String(b.date).localeCompare(String(a.date)) || String(b.id).localeCompare(String(a.id)); });
+      toast(state.facture ? 'Facture enregistrée' : 'Facture archivée');
+      closeFacture();
+    }).catch(function (e) {
+      toast('Erreur : ' + errMsg(e), true);
+    }).finally(function () {
+      $('btnFSave').disabled = false;
+      $('btnFSave').textContent = state.facture ? 'Enregistrer' : 'Archiver la facture';
+    });
+  }
+
+  function deleteFactureForm() {
+    var f = state.facture;
+    if (!f || !confirm('Supprimer la facture ' + f.id + ' ?\nLe fichier part à la corbeille Google Drive (récupérable 30 jours).')) return;
+    call('deleteFacture', f.id).then(function () {
+      state.factures = state.factures.filter(function (x) { return x.id !== f.id; });
+      toast('Facture supprimée');
+      closeFacture();
+    }).catch(function (e) { toast('Erreur : ' + errMsg(e), true); });
+  }
+
+  function addFactureFromForm() {
+    var ready = (state.current && state.current.id) ? Promise.resolve() : save(true);
+    ready.then(function () {
+      openFacture(null, {
+        intervention: state.current.id,
+        piece: $('piece').value,
+        montant: $('montantPiece').value
+      }, 'form');
+    }).catch(function () {});
+  }
+
+  // ------------------------------------------------------------------
+  // Événements
+  // ------------------------------------------------------------------
+  $('btnNew').addEventListener('click', function () { openForm(null); });
+  $('btnBack').addEventListener('click', showList);
+  $('form').addEventListener('submit', function (e) { e.preventDefault(); save(false).catch(function () {}); });
+  $('btnDelete').addEventListener('click', remove);
+  $('montantPiece').addEventListener('input', updateMargin);
+  $('montantRegle').addEventListener('input', updateMargin);
+  $('search').addEventListener('input', renderList);
+  document.querySelectorAll('.chip').forEach(function (c) {
+    c.addEventListener('click', function () {
+      document.querySelectorAll('.chip').forEach(function (x) { x.classList.remove('on'); });
+      c.classList.add('on');
+      state.filter = c.getAttribute('data-filter');
+      renderList();
+    });
+  });
+  $('list').addEventListener('click', function (e) {
+    var el = e.target.closest('.item');
+    if (!el) return;
+    var id = el.getAttribute('data-id');
+    var item = state.items.find(function (it) { return it.id === id; });
+    if (item) openForm(item);
+  });
+  $('btnAddPhoto').addEventListener('click', function () { $('fileInput').click(); });
+  $('fileInput').addEventListener('change', function () {
+    // Copie avant de vider le champ : la FileList est vidée par « value = '' ».
+    var files = Array.prototype.slice.call(this.files || []);
+    this.value = '';
+    addPhotos(files);
+  });
+  $('photos').addEventListener('click', function (e) {
+    var el = e.target.closest('.ph');
+    if (el) openLightbox(Number(el.getAttribute('data-index')));
+  });
+  $('lbClose').addEventListener('click', closeLightbox);
+  $('lbPrev').addEventListener('click', function () { stepLightbox(-1); });
+  $('lbNext').addEventListener('click', function () { stepLightbox(1); });
+  $('lbDelete').addEventListener('click', deleteCurrentPhoto);
+  $('lightbox').addEventListener('click', function (e) { if (e.target === this) closeLightbox(); });
+  document.addEventListener('keydown', function (e) {
+    if (!$('lightbox').classList.contains('on')) return;
+    if (e.key === 'Escape') closeLightbox();
+    if (e.key === 'ArrowLeft') stepLightbox(-1);
+    if (e.key === 'ArrowRight') stepLightbox(1);
+  });
+
+  // Factures
+  document.querySelectorAll('.tab').forEach(function (t) {
+    t.addEventListener('click', function () {
+      if (t.getAttribute('data-tab') === 'factures') { show('viewFactures'); renderFactures(); }
+      else showList();
+    });
+  });
+  $('btnNewFacture').addEventListener('click', function () { openFacture(null, null, 'factures'); });
+  $('btnAddFacture').addEventListener('click', addFactureFromForm);
+  $('btnFBack').addEventListener('click', closeFacture);
+  $('fForm').addEventListener('submit', function (e) { e.preventDefault(); saveFactureForm(); });
+  $('btnFDelete').addEventListener('click', deleteFactureForm);
+  $('fSearch').addEventListener('input', renderFactures);
+  $('fYear').addEventListener('change', renderFactures);
+  $('btnPickFile').addEventListener('click', function () { $('fFile').click(); });
+  $('fFile').addEventListener('change', function () {
+    var file = this.files && this.files[0];
+    this.value = '';
+    if (!file) return;
+    $('fFileName').textContent = 'Lecture…';
+    readFile(file).then(function (r) {
+      state.fFile = r;
+      $('fFileName').textContent = file.name;
+    }).catch(function (e) {
+      state.fFile = null;
+      $('fFileName').textContent = 'Aucun fichier choisi';
+      toast(errMsg(e), true);
+    });
+  });
+  function onFactureClick(e) {
+    if (e.target.closest('a')) return; // lien « Ouvrir »
+    var el = e.target.closest('[data-fid]');
+    if (!el) return;
+    var f = state.factures.find(function (x) { return x.id === el.getAttribute('data-fid'); });
+    if (f) openFacture(f, null, this.id === 'formFactures' ? 'form' : 'factures');
+  }
+  $('fList').addEventListener('click', onFactureClick);
+  $('formFactures').addEventListener('click', onFactureClick);
+
+  // Démarrage
+  loadList().then(loadFactures);
+  call('getLinks').then(function (l) {
+    $('lnkSheet').href = l.sheetUrl;
+    $('lnkSheet').classList.remove('hidden');
+    $('lnkFactures').href = l.facturesUrl;
+    $('lnkFactures').classList.remove('hidden');
+  }).catch(function () {});
+</script>
+</body>
+</html>

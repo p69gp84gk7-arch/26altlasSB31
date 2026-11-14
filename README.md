@@ -89,6 +89,14 @@ Fichiers rangés dans `Factures pièces/<année>/` et nommés `date_fournisseur_
 Fichiers rangés dans Drive : `Documentation technique/<Marque> <Référence>/`, nommés `Catégorie - Titre - DOC-0001`. Onglet **Documentation** de la feuille : ID, référence, marque, type, catégorie, titre, lien du fichier, format, date d'ajout.
 Il n'existe pas de base libre de vues éclatées : dans l'UE, les réparateurs professionnels peuvent s'inscrire sur l'espace pro de chaque fabricant pour obtenir les vues éclatées officielles (règlements écoconception 2019/2023, 2019/2022, 2019/2019).
 
+**Navigation** : barre en bas de l'écran : Fiches, Clients, Carte, Factures, Docs, Tarifs.
+
+**Répertoire clients** (onglet *Clients*) : construit automatiquement à partir des fiches (regroupées par nom + prénom, majuscules, accents et espaces ignorés). Pour chaque client : téléphone et adresse de la fiche la plus récente, nombre d'interventions, total réglé, marge, temps passé ; boutons Appeler, SMS, Itinéraire (Plans sur iPhone, Google Maps sinon), Waze, Voir sur la carte ; historique des interventions, appareils (vers leur fiche documentation) et « + Nouvelle intervention » pré-remplie.
+
+**Carte** (onglet *Carte*) : un point par adresse client (orange : intervention en cours, vert : terminé) et l'adresse de départ. Fond de carte OpenStreetMap (Leaflet). Les adresses sont localisées par le service de géocodage de l'IGN (Géoplateforme, `data.geopf.fr/geocodage`, gratuit, sans clé) puis mémorisées dans l'onglet **Adresses** de la feuille : chaque adresse n'est recherchée qu'une fois (pour relancer une recherche après correction, supprimer sa ligne dans cet onglet). Les adresses introuvables sont listées sous la carte.
+
+**Simulateur de tarification** (onglet *Tarifs*, ou bouton « Simuler le prix » dans une fiche) : déplacement (forfait + km au-delà des km inclus, aller-retour), diagnostic (forfait ou temps × taux horaire), main d'œuvre (arrondie au quart d'heure supérieur par défaut), pièces (prix d'achat × coefficient), minimum facturé, TVA (0 = non applicable, art. 293 B du CGI). La distance est estimée depuis l'adresse de départ (vol d'oiseau × facteur route). Rentabilité : temps total trajet compris, reste après pièces, gain par heure, comparé à votre moyenne réelle. « Reporter dans la fiche » remplit le montant réglé. Les tarifs se règlent dans « Mes tarifs » et sont enregistrés dans l'onglet **Paramètres** (les valeurs de départ sont des exemples).
+
 **Temps passés** : dans la fiche, deux listes (de 5 en 5 min jusqu'à 1 h, puis de 15 en 15 min jusqu'à 10 h). La fiche affiche le temps total et la marge par heure. Dans la feuille, les temps sont en minutes.
 
 Dans Google Drive, tout est dans le dossier **Dépannages électroménager** :

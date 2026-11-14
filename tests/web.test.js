@@ -13,6 +13,10 @@ const WEB = path.join(__dirname, '..', 'web');
 const LINK = SITE + '#connexion=' + encodeURIComponent(API_URL) + '&cle=' + API_KEY;
 const fixture = name => path.join(__dirname, name);
 
+// Carte : Leaflet servi depuis node_modules, tuiles OpenStreetMap remplacées par une image vide.
+const LEAFLET_DIR = path.dirname(require.resolve('leaflet/dist/leaflet.js'));
+const PNG_1PX = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64');
+
 async function openApp(env) {
   const browser = await chromium.launch();
   const context = await browser.newContext({ ...devices['iPhone 13'] });
@@ -27,6 +31,11 @@ async function openApp(env) {
     if (!fs.existsSync(p)) return route.fulfill({ status: 404, body: '' });
     route.fulfill({ body: fs.readFileSync(p), contentType: file.endsWith('.html') ? 'text/html; charset=utf-8' : undefined });
   });
+  await context.route('https://unpkg.com/leaflet@1.9.4/dist/**', route => {
+    const file = path.join(LEAFLET_DIR, path.basename(new URL(route.request().url()).pathname));
+    route.fulfill({ body: fs.readFileSync(file), contentType: file.endsWith('.css') ? 'text/css' : 'application/javascript' });
+  });
+  await context.route('https://tile.openstreetmap.org/**', route => route.fulfill({ body: PNG_1PX, contentType: 'image/png' }));
   await context.route(API_URL, route => {
     const req = JSON.parse(route.request().postData());
     const out = env.ctx.doPost({ postData: { contents: JSON.stringify(req) } });
@@ -201,6 +210,98 @@ test('connexion, interventions, photos et factures depuis le site GitHub Pages',
     await page.goto(LINK);
     await page.waitForSelector('#viewList:not(.hidden) #list .item');
     assert.equal(new URL(page.url()).hash, '');
+
+    assert.deepEqual(errors, []);
+  } finally {
+    await browser.close();
+  }
+});
+
+test('répertoire clients, carte et simulateur de tarification', { timeout: 120000 }, async () => {
+  const env = makeEnv({ geocode: { 'Montauban': [42.80, 0.61], 'Marignac': [42.92, 0.65], 'Luchon': [42.79, 0.59] } });
+  const { api } = env;
+  api('saveIntervention', { nom: 'Jalabert', prenom: 'Jean Philippe', telephone: '+33 6 33 82 11 87',
+    adresse: '3 Rue du Pont de Martin 31110 Montauban-de-Luchon France', appareil: 'Sèche-linge', marque: 'Whirlpool',
+    reference: 'DELY9000', tempsDiagnostic: 45, tempsReparation: 120, montantPiece: '25,98', montantRegle: '160', termine: true });
+  api('saveIntervention', { nom: 'Hardouin', prenom: 'Marine', adresse: '25 Rue Jean Jaurès 31440 Marignac France',
+    appareil: 'Lave-linge', marque: 'Beko', tempsDiagnostic: 45, montantPiece: '20,40' });
+  api('saveIntervention', { nom: 'hardouin', prenom: 'Marine ', adresse: '25 Rue Jean Jaurès 31440 Marignac France',
+    appareil: 'Four', marque: 'Bosch', termine: true });
+  api('saveIntervention', { nom: 'Perdu', adresse: 'Lieu-dit sans nom' });
+  api('saveParametres', { adresseDepart: 'Place Joffre 31110 Luchon' });
+
+  const { browser, page, errors } = await openApp(env);
+  try {
+    await page.goto(LINK);
+    await page.waitForSelector('#list .item');
+
+    // Répertoire : fiches regroupées par client (majuscules et espaces ignorés)
+    await page.click('.nav [data-tab=clients]');
+    await page.waitForSelector('#viewClients:not(.hidden) #cList .item');
+    assert.equal(await page.locator('#cList .item').count(), 3);
+    await page.fill('#cSearch', 'marignac');
+    assert.equal(await page.locator('#cList .item').count(), 1);
+    await page.click('#cList .item');
+    await page.waitForSelector('#viewClient:not(.hidden)');
+    assert.equal(await page.textContent('#cTitle'), 'Hardouin Marine');
+    assert.equal(await page.locator('#cInterventions .item').count(), 2);
+
+    // Fiche ouverte depuis le client : « Retour » revient au client
+    await page.click('#cInterventions .item >> nth=0');
+    await page.waitForSelector('#viewForm:not(.hidden)');
+    await page.click('#btnBack');
+    await page.waitForSelector('#viewClient:not(.hidden)');
+
+    // Nouvelle intervention pré-remplie pour ce client
+    await page.click('#btnCNew');
+    assert.equal(await page.inputValue('#nom'), 'Hardouin');
+    assert.equal(await page.inputValue('#adresse'), '25 Rue Jean Jaurès 31440 Marignac France');
+    await page.click('#btnBack');
+
+    // Carte : un point par adresse + départ ; adresse introuvable signalée
+    await page.click('#btnCMap');
+    await page.waitForSelector('#viewCarte:not(.hidden) .leaflet-popup');
+    assert.equal(await page.locator('#map path.leaflet-interactive').count(), 3);
+    assert.match(await page.textContent('.leaflet-popup'), /Hardouin Marine/);
+    assert.match(await page.textContent('#mapMissing'), /Adresse non trouvée : Perdu/);
+    assert.match(await page.textContent('#mapInfo'), /2 clients sur la carte/); // + le point de départ
+    await page.click('.leaflet-popup button');
+    await page.waitForSelector('#viewClient:not(.hidden)');
+    assert.equal(env.geoRequests.length, 4, 'chaque adresse est localisée une seule fois');
+
+    // Simulateur : distance estimée et calcul détaillé
+    await page.click('.nav [data-tab=tarifs]');
+    await page.waitForSelector('#viewTarifs:not(.hidden) #tFiche option[value="INT-0002"]', { state: 'attached' });
+    await page.selectOption('#tFiche', 'INT-0002');
+    await page.waitForFunction(() => document.getElementById('tKm').value === '20');
+    // 30 € + (40 − 20 km) × 0,60 = 42 ; diag 45 min × 45 = 33,75 ; pièces 20,40 × 1,3 = 26,52
+    assert.match(await page.textContent('#tTotal'), /102,27/);
+    await page.selectOption('#tRep', '50'); // arrondi au quart d'heure supérieur : 1 h
+    assert.match(await page.textContent('#tTotal'), /147,27/);
+    assert.match(await page.textContent('#tDevis'), /arrondi de 50 min/);
+    assert.match(await page.textContent('#tRenta'), /Votre moyenne réelle/);
+
+    // Report du prix dans la fiche
+    await page.click('#btnTReport');
+    await page.waitForSelector('#viewForm:not(.hidden)');
+    assert.equal(await page.inputValue('#montantRegle'), '147,27');
+
+    // Tarifs modifiés : TVA 20 %, enregistrés dans l'onglet Paramètres
+    await page.click('.nav [data-tab=tarifs]');
+    await page.click('#tParamsBox summary');
+    await page.fill('#p_tauxTVA', '20');
+    await page.click('#btnTSave');
+    await page.waitForFunction(() => /TTC/.test(document.getElementById('tTotal').textContent));
+    assert.equal(env.extraSheets['Paramètres']._rows.find(r => r[0] === 'tauxTVA')[1], 20);
+
+    // Simulateur ouvert depuis une fiche : reprend ses valeurs
+    await page.click('.nav [data-tab=list]');
+    await page.click('#list .item >> text=Jalabert');
+    await page.click('#btnSimuler');
+    await page.waitForSelector('#viewTarifs:not(.hidden)');
+    assert.equal(await page.inputValue('#tDiag'), '45');
+    assert.equal(await page.inputValue('#tRep'), '120');
+    assert.equal(await page.inputValue('#tPieces'), '25,98');
 
     assert.deepEqual(errors, []);
   } finally {

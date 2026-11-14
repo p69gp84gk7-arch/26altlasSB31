@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<rect width="512" height="512" fill="#1f3864"/>
+<g transform="translate(10 0)">
+  <!-- Moitié de machine, bord gauche droit -->
+  <path d="M230 96 H332 A30 30 0 0 1 362 126 V386 A30 30 0 0 1 332 416 H230 Z" fill="#fff"/>
+  <rect x="236" y="164" width="126" height="12" fill="#1f3864"/>
+  <circle cx="292" cy="131" r="9" fill="#1f3864"/>
+  <circle cx="328" cy="131" r="14" fill="#1f3864"/>
+  <path d="M236 200 A92 92 0 0 1 236 384 Z" fill="#1f3864"/>
+  <path d="M236 226 A66 66 0 0 1 236 358 Z" fill="#fff"/>
+  <!-- Trait bleu de séparation : contour de la clé côté machine -->
+  <circle cx="195" cy="160" r="70" fill="#1f3864"/>
+  <rect x="160" y="160" width="76" height="256" fill="#1f3864"/>
+  <!-- Clé plate simple : tête ronde + manche large, bas à plat aligné sur la machine -->
+  <circle cx="195" cy="160" r="64" fill="#fff"/>
+  <path d="M160 160 H230 V416 H190 A30 30 0 0 1 160 386 Z" fill="#fff"/>
+  <!-- Fourche -->
+  <rect x="169.0" y="88" width="52" height="62" fill="#1f3864"/>
+</g>
+</svg>

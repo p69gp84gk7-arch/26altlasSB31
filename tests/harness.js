@@ -109,6 +109,7 @@ function makeEnv(options = {}) {
   const props = { API_KEY };
   const fetches = [];
   const mails = [];
+  const geoRequests = [];
   const ctx = {
     console,
     SpreadsheetApp: { openById: () => ss, flush: () => {}, getUi: () => { throw new Error('pas d\'interface'); } },
@@ -128,6 +129,16 @@ function makeEnv(options = {}) {
         if (options.githubDown) return { getResponseCode: () => 503, getContentText: () => '' };
         return { getResponseCode: () => 200, getContentText: () => API_SOURCE };
       },
+      // Géocodage simulé (service de l'IGN) : options.geocode = { 'texte contenu dans l'adresse': [lat, lng] }
+      fetchAll: (requests) => requests.map(({ url }) => {
+        geoRequests.push(url);
+        if (options.geoDown) return { getResponseCode: () => 503, getContentText: () => '' };
+        const q = decodeURIComponent((/[?&]q=([^&]*)/.exec(url) || [])[1] || '');
+        const hit = Object.entries(options.geocode || {}).find(([k]) => q.toLowerCase().includes(k.toLowerCase()));
+        const features = hit ? [{ geometry: { type: 'Point', coordinates: [hit[1][1], hit[1][0]] },
+          properties: { label: 'Trouvé : ' + hit[0], score: 0.95 } }] : [];
+        return { getResponseCode: () => 200, getContentText: () => JSON.stringify({ type: 'FeatureCollection', features }) };
+      }),
     },
     ContentService: {
       MimeType: { JSON: 'json' },
@@ -171,7 +182,7 @@ function makeEnv(options = {}) {
     return res.data;
   }
 
-  return { ctx, post, api, mails, items, extraSheets, rows: sheet._rows, frows: fsheet._rows, photosRoot, facturesRoot, docsRoot, props, fetches, cacheStore };
+  return { ctx, post, api, mails, geoRequests, items, extraSheets, rows: sheet._rows, frows: fsheet._rows, photosRoot, facturesRoot, docsRoot, props, fetches, cacheStore };
 }
 
 module.exports = { makeEnv, API_KEY };

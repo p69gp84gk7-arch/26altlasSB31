@@ -13,7 +13,9 @@
  *  - les factures des pièces commandées sont archivées dans le dossier Drive
  *    « Factures pièces » (un sous-dossier par année) et listées dans l'onglet « Factures » ;
  *  - la documentation technique (captures, photos, PDF) est rangée par appareil dans le
- *    dossier Drive « Documentation technique » et listée dans l'onglet « Documentation ».
+ *    dossier Drive « Documentation technique » et listée dans l'onglet « Documentation » ;
+ *  - les coordonnées GPS des adresses clients (carte) sont gardées dans l'onglet « Adresses » ;
+ *  - les tarifs du simulateur sont dans l'onglet « Paramètres ».
  *
  * Les fonctions appelables par l'application sont listées dans API.ACTIONS (en bas du fichier).
  */
@@ -548,6 +550,186 @@ function getDocData(fileId) {
 }
 
 // ---------------------------------------------------------------------------
+// Carte : géocodage des adresses (service de l'IGN, Géoplateforme, sans clé)
+// ---------------------------------------------------------------------------
+var GEOCODE_URL = 'https://data.geopf.fr/geocodage/search';
+var GEO_SHEET_NAME = 'Adresses';
+var GEO_HEADERS = ['Adresse', 'Latitude', 'Longitude', 'Adresse trouvée', 'Précision', 'Recherché le'];
+var GEO_MAX_PAR_APPEL = 40; // limite le temps d'une requête ; la suite est faite à l'appel suivant
+
+/**
+ * Points de la carte : coordonnées de chaque adresse client (et de l'adresse de départ).
+ * Les adresses déjà trouvées sont lues dans l'onglet « Adresses » ; les nouvelles sont géocodées.
+ * @return {{points: Object[], depart: Object, restant: number}}
+ */
+function getCarte() {
+  var params = getParametres();
+  var vues = {};
+  var adresses = listInterventions().reverse().map(function (it) { return clean_(it.adresse); }).filter(function (a) {
+    var k = geoKey_(a);
+    if (!a || vues[k]) return false;
+    vues[k] = true;
+    return true;
+  });
+  var depart = clean_(params.adresseDepart);
+  var toutes = depart ? adresses.concat([depart]) : adresses;
+  var geo = geocodeAddresses_(toutes);
+  return {
+    points: adresses.map(function (a) { return geoPoint_(a, geo.cache); }),
+    depart: depart ? geoPoint_(depart, geo.cache) : null,
+    restant: geo.restant
+  };
+}
+
+function geoKey_(a) { return clean_(a).toLowerCase().replace(/\s+/g, ' '); }
+
+function geoPoint_(adresse, cache) {
+  var c = cache[geoKey_(adresse)];
+  return {
+    adresse: adresse,
+    lat: c && c.lat !== '' ? Number(c.lat) : null,
+    lng: c && c.lng !== '' ? Number(c.lng) : null,
+    label: c ? c.label : '',
+    score: c && c.score !== '' ? Number(c.score) : null,
+    trouve: !!(c && c.lat !== ''),
+    recherche: !!c
+  };
+}
+
+function getGeoSheet_() {
+  var ss = getSpreadsheet_();
+  var sh = ss.getSheetByName(GEO_SHEET_NAME);
+  if (sh) return sh;
+  sh = ss.insertSheet(GEO_SHEET_NAME);
+  sh.getRange(1, 1, 1, GEO_HEADERS.length).setValues([GEO_HEADERS]);
+  sh.getRange(1, 1, 1, GEO_HEADERS.length).setFontWeight('bold').setBackground('#1f3864').setFontColor('#ffffff');
+  sh.setFrozenRows(1);
+  sh.setColumnWidths(1, GEO_HEADERS.length, 160);
+  return sh;
+}
+
+/** Géocode les adresses absentes de l'onglet « Adresses » (une seule fois par adresse). */
+function geocodeAddresses_(adresses) {
+  var sh = getGeoSheet_();
+  var cache = {};
+  var last = sh.getLastRow();
+  if (last >= 2) {
+    sh.getRange(2, 1, last - 1, 5).getValues().forEach(function (r) {
+      if (clean_(r[0])) cache[geoKey_(r[0])] = { lat: r[1], lng: r[2], label: r[3], score: r[4] };
+    });
+  }
+  var manquantes = adresses.filter(function (a) { return clean_(a) && !cache[geoKey_(a)]; });
+  var lot = manquantes.slice(0, GEO_MAX_PAR_APPEL);
+  if (lot.length) {
+    var reponses = UrlFetchApp.fetchAll(lot.map(function (a) {
+      return { url: GEOCODE_URL + '?limit=1&q=' + encodeURIComponent(clean_(a).slice(0, 200)), muteHttpExceptions: true };
+    }));
+    var rows = [];
+    var now = new Date();
+    lot.forEach(function (a, i) {
+      var res = reponses[i];
+      if (!res || res.getResponseCode() !== 200) return; // service indisponible : on réessaiera plus tard
+      var f = null;
+      try { f = (JSON.parse(res.getContentText()).features || [])[0] || null; } catch (e) { return; }
+      var rec = f && f.geometry && f.geometry.coordinates
+        ? { lat: f.geometry.coordinates[1], lng: f.geometry.coordinates[0],
+            label: (f.properties && f.properties.label) || '', score: (f.properties && f.properties.score) || '' }
+        : { lat: '', lng: '', label: 'Adresse introuvable', score: '' };
+      cache[geoKey_(a)] = rec;
+      rows.push([clean_(a), rec.lat, rec.lng, rec.label, rec.score, now]);
+    });
+    if (rows.length) {
+      var lock = LockService.getScriptLock();
+      lock.waitLock(20000);
+      try {
+        sh.getRange(sh.getLastRow() + 1, 1, rows.length, GEO_HEADERS.length).setValues(rows);
+      } finally {
+        lock.releaseLock();
+      }
+    }
+  }
+  return { cache: cache, restant: Math.max(manquantes.length - lot.length, 0) };
+}
+
+// ---------------------------------------------------------------------------
+// Paramètres du simulateur de tarification (onglet « Paramètres », modifiable)
+// ---------------------------------------------------------------------------
+var PARAMS_SHEET_NAME = 'Paramètres';
+// Valeurs d'exemple au premier lancement : à adapter à vos tarifs.
+var PARAMS_DEFAUT = [
+  ['adresseDepart', '', "Adresse de départ des tournées (calcul des distances)"],
+  ['tauxHoraire', 45, "Taux horaire main d'œuvre (€ HT / heure)"],
+  ['forfaitDeplacement', 30, 'Forfait déplacement (€ HT)'],
+  ['kmInclus', 20, 'Km inclus dans le forfait (aller-retour)'],
+  ['prixKm', 0.6, 'Prix par km au-delà (€ HT / km)'],
+  ['forfaitDiagnostic', 0, 'Forfait diagnostic (€ HT ; 0 = temps passé × taux horaire)'],
+  ['arrondiMinutes', 15, "Main d'œuvre arrondie au multiple supérieur (minutes)"],
+  ['coefficientPieces', 1.3, 'Coefficient sur le prix d’achat des pièces (1,3 = +30 %)'],
+  ['minimumFacture', 0, 'Montant minimum facturé (€ HT ; 0 = aucun)'],
+  ['tauxTVA', 0, 'TVA en % (0 = TVA non applicable, art. 293 B du CGI)'],
+  ['vitesseMoyenne', 50, 'Vitesse moyenne sur la route (km/h, temps de trajet)'],
+  ['facteurRoute', 1.3, 'Distance route ≈ distance à vol d’oiseau × ce facteur']
+];
+
+function getParamsSheet_() {
+  var ss = getSpreadsheet_();
+  var sh = ss.getSheetByName(PARAMS_SHEET_NAME);
+  if (sh) return sh;
+  sh = ss.insertSheet(PARAMS_SHEET_NAME);
+  var rows = [['Paramètre', 'Valeur', 'Description']].concat(PARAMS_DEFAUT);
+  sh.getRange(1, 1, rows.length, 3).setValues(rows);
+  sh.getRange(1, 1, 1, 3).setFontWeight('bold').setBackground('#1f3864').setFontColor('#ffffff');
+  sh.setFrozenRows(1);
+  sh.setColumnWidths(1, 3, 220);
+  return sh;
+}
+
+/** Tarifs du simulateur : valeurs de l'onglet « Paramètres », complétées par les valeurs d'exemple. */
+function getParametres() {
+  var out = {};
+  PARAMS_DEFAUT.forEach(function (p) { out[p[0]] = p[1]; });
+  var sh = getParamsSheet_();
+  var last = sh.getLastRow();
+  if (last >= 2) {
+    sh.getRange(2, 1, last - 1, 2).getValues().forEach(function (r) {
+      var k = clean_(r[0]);
+      if (!out.hasOwnProperty(k)) return;
+      out[k] = k === 'adresseDepart' ? clean_(r[1]) : (r[1] === '' ? out[k] : Number(String(r[1]).replace(',', '.')));
+    });
+  }
+  return out;
+}
+
+/** Enregistre les tarifs (seules les clés connues sont acceptées). */
+function saveParametres(data) {
+  data = data || {};
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    var sh = getParamsSheet_();
+    var last = sh.getLastRow();
+    var keys = last >= 2 ? sh.getRange(2, 1, last - 1, 1).getValues().map(function (r) { return clean_(r[0]); }) : [];
+    PARAMS_DEFAUT.forEach(function (p) {
+      var k = p[0];
+      if (data[k] === undefined) return;
+      var v;
+      if (k === 'adresseDepart') v = clean_(data[k]);
+      else {
+        v = Number(String(data[k]).replace(',', '.'));
+        if (!isFinite(v) || v < 0) throw new Error('Valeur invalide pour « ' + p[2] + ' ».');
+      }
+      var i = keys.indexOf(k);
+      if (i >= 0) sh.getRange(i + 2, 2).setValue(v);
+      else { sh.getRange(sh.getLastRow() + 1, 1, 1, 3).setValues([[k, v, p[2]]]); keys.push(k); }
+    });
+    SpreadsheetApp.flush();
+  } finally {
+    lock.releaseLock();
+  }
+  return getParametres();
+}
+
+// ---------------------------------------------------------------------------
 // Fonctions internes
 // ---------------------------------------------------------------------------
 
@@ -942,7 +1124,7 @@ function factureFileFromUrl_(url) {
 // Fonctions exposées à l'application (appelées par le chargeur apps-script/Code.gs)
 // ---------------------------------------------------------------------------
 var API = {
-  VERSION: '2026-11-11.6',
+  VERSION: '2026-11-14.1',
   ACTIONS: {
     listInterventions: listInterventions,
     saveIntervention: saveIntervention,
@@ -959,6 +1141,9 @@ var API = {
     listDocs: listDocs,
     saveDoc: saveDoc,
     deleteDoc: deleteDoc,
-    getDocData: getDocData
+    getDocData: getDocData,
+    getCarte: getCarte,
+    getParametres: getParametres,
+    saveParametres: saveParametres
   }
 };

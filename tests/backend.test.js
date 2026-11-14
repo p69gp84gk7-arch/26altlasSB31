@@ -299,3 +299,47 @@ test('documentation : documents rangés par appareil, catégories, déplacement,
   assert.equal(api('listDocs').length, 2);
   assert.ok(photosRoot);
 });
+
+test('tarifs : paramètres créés avec des valeurs d\'exemple, modifiables, valeurs invalides refusées', () => {
+  const { api, extraSheets } = makeEnv();
+  const p = api('getParametres');
+  assert.equal(p.tauxHoraire, 45);
+  assert.equal(p.adresseDepart, '');
+  assert.ok(extraSheets['Paramètres'], 'onglet Paramètres créé');
+  const p2 = api('saveParametres', { tauxHoraire: '52,5', adresseDepart: ' 1 place de la Mairie 31110 Luchon ', inconnu: 3 });
+  assert.equal(p2.tauxHoraire, 52.5);
+  assert.equal(p2.adresseDepart, '1 place de la Mairie 31110 Luchon');
+  assert.equal(p2.inconnu, undefined);
+  assert.throws(() => api('saveParametres', { prixKm: '-1' }), /Valeur invalide/);
+  assert.throws(() => api('saveParametres', { prixKm: 'abc' }), /Valeur invalide/);
+  // Modification à la main dans la feuille
+  extraSheets['Paramètres']._rows.find(r => r[0] === 'coefficientPieces')[1] = '1,5';
+  assert.equal(api('getParametres').coefficientPieces, 1.5);
+});
+
+test('carte : adresses géocodées une seule fois, introuvables mémorisées, service indisponible réessayé', () => {
+  const env = makeEnv({ geocode: { 'Marignac': [42.92, 0.65], 'Luchon': [42.79, 0.59] } });
+  const { api, geoRequests, extraSheets } = env;
+  api('saveIntervention', { nom: 'Hardouin', adresse: '25 Rue Jean Jaurès 31440 Marignac France' });
+  api('saveIntervention', { nom: 'Autre', adresse: '25 rue jean jaurès  31440 Marignac France' }); // même adresse
+  api('saveIntervention', { nom: 'Perdu', adresse: 'Lieu-dit inconnu' });
+  api('saveIntervention', { nom: 'SansAdresse' });
+  api('saveParametres', { adresseDepart: 'Place de la Mairie 31110 Luchon' });
+  const c = api('getCarte');
+  assert.equal(c.points.length, 2, 'adresses identiques regroupées, fiches sans adresse ignorées');
+  const marignac = c.points.find(p => /Marignac/.test(p.adresse));
+  assert.deepEqual([marignac.lat, marignac.lng, marignac.trouve], [42.92, 0.65, true]);
+  assert.equal(c.points.find(p => /inconnu/.test(p.adresse)).trouve, false);
+  assert.deepEqual([c.depart.lat, c.depart.lng], [42.79, 0.59]);
+  assert.equal(geoRequests.length, 3);
+  assert.match(geoRequests[0], /^https:\/\/data\.geopf\.fr\/geocodage\/search\?limit=1&q=/);
+  assert.equal(extraSheets.Adresses._rows.length, 4);
+  api('getCarte');
+  assert.equal(geoRequests.length, 3, 'rien n\'est recherché une deuxième fois');
+
+  const down = makeEnv({ geoDown: true });
+  down.api('saveIntervention', { nom: 'X', adresse: '1 rue A 31000 Toulouse' });
+  assert.equal(down.api('getCarte').points[0].trouve, false);
+  down.api('getCarte');
+  assert.equal(down.geoRequests.length, 2, 'service indisponible : adresse réessayée');
+});
